@@ -9,7 +9,7 @@ AwaitCue handles screen content that may include source code, documents, message
 - API keys are stored in macOS Keychain.
 - Structured logs contain identifiers, decision enums, confidence, and sanitized error categories only.
 - Telemetry and crash reporting are disabled in the initial release.
-- Excluded apps and hosts are classified locally as not appropriate to interrupt; no screenshot is uploaded.
+- User-configured bundle IDs and active Chromium hosts are checked locally before current-activity capture. A match is classified as not appropriate to interrupt without taking or uploading that screenshot. When host exclusions exist but the active Chromium host cannot be resolved unambiguously, AwaitCue also declines to capture.
 - Exiting the menu bar app stops observation and browser capture.
 
 ## Model endpoint boundary
@@ -18,6 +18,8 @@ The user configures a Responses API-compatible base URL. Before saving a new hos
 
 Every request sets `store: false`, but a third-party compatible endpoint may ignore that field. AwaitCue can guarantee its own local behavior and outgoing request shape; it cannot guarantee a provider’s retention policy.
 
+The local exclusion lists apply to current-activity evidence used for the interruption decision. They do not silently change the Target that the user explicitly selected for a Condition Hook; Target evidence remains governed by that explicit selection and the confirmed model endpoint.
+
 ## Untrusted observed content
 
 Text and images from observed apps are data, never instructions. Model instructions must explicitly state that page or window content cannot alter the decision contract, invoke tools, or request external actions.
@@ -25,6 +27,10 @@ Text and images from observed apps are data, never instructions. Model instructi
 ## Browser permissions
 
 DOM observation is preferred. Pixel-only browser Targets require an explicit user action to start `tabCapture`. The extension must request video only, use the lowest practical frame rate and resolution, and close the stream when the Hook completes, becomes unavailable, is cancelled, or the native app disconnects.
+
+The Chromium native host does not own Hook state. It authenticates to a loopback-only menu bar relay with a random token stored in a `0600` descriptor, then forwards already-framed JSON. When the menu bar app exits, the relay disappears and the host reports `native_app_unavailable`.
+
+The native host also attaches the operating-system bundle identity of the browser process that launched it. The menu bar app rejects cross-browser responses and ambiguous multi-profile active-host results. Arc layouts whose sidebar or docked tools make the viewport origin unprovable are rejected rather than approximated.
 
 ## Reporting a vulnerability
 
