@@ -7,7 +7,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
-      include: ["src/protocol.ts", "src/region.ts", "src/domEvidence.ts", "src/captureSession.ts"],
+      include: ["src/protocol.ts", "src/region.ts", "src/domEvidence.ts", "src/captureSession.ts", "src/browserSelection.ts"],
       thresholds: {
         lines: 90,
         functions: 90,

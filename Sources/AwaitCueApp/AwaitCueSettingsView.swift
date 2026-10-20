@@ -38,7 +38,7 @@ struct AwaitCueSettingsView: View {
                 }
                 .disabled(model.modelStatus == .testing)
                 Button("删除配置", role: .destructive) {
-                    model.deleteModelConfiguration()
+                    Task { await model.deleteModelConfiguration() }
                 }
                 Spacer()
                 connectionStatus
@@ -51,11 +51,44 @@ struct AwaitCueSettingsView: View {
             LabeledContent("截图与 DOM") {
                 Text("仅内存处理，不落盘")
             }
+            LabeledContent("屏幕录制权限") {
+                if model.screenCapturePermissionGranted {
+                    Label("已允许", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else {
+                    Button("请求权限") {
+                        model.requestScreenCapturePermission()
+                    }
+                }
+            }
             LabeledContent("遥测与崩溃上报") {
                 Text("关闭")
             }
             LabeledContent("菜单栏应用退出后") {
                 Text("停止全部观察与浏览器捕获")
+            }
+            LabeledContent("浏览器 relay") {
+                Text(model.browserBridgeStatus)
+            }
+            LabeledContent("全局框选快捷键") {
+                Text("⌘⇧Space")
+            }
+            Section("当前活动隐私排除") {
+                TextField(
+                    "应用 bundle ID，每行一个",
+                    text: $model.excludedApplicationBundleIdentifiersText,
+                    axis: .vertical
+                )
+                .lineLimit(2 ... 5)
+                TextField(
+                    "Chromium host，每行一个",
+                    text: $model.excludedBrowserHostsText,
+                    axis: .vertical
+                )
+                .lineLimit(2 ... 5)
+                Text("命中规则时会在本地判定为不适合打断，不生成当前活动截图，也不请求模型。Chromium host 规则同时覆盖其子域；无法可信解析当前 host 时同样不会截图。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Divider()
             Button("删除所有本地数据…", role: .destructive) {

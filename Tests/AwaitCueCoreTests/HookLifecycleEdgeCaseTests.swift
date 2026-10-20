@@ -33,9 +33,7 @@ struct HookLifecycleEdgeCaseTests {
         let condition = try makeCondition(now: now)
         let delay = try makeDelay(now: now)
 
-        #expect(throws: HookLifecycleError.triggerDoesNotSupportEvent) {
-            try HookLifecycle.apply(.timeAdvanced(to: now), to: condition)
-        }
+        #expect(try HookLifecycle.apply(.timeAdvanced(to: now), to: condition).hook == condition)
         #expect(throws: HookLifecycleError.triggerDoesNotSupportEvent) {
             try HookLifecycle.apply(
                 .conditionEvaluated(.matched, at: now),
@@ -74,7 +72,7 @@ struct HookLifecycleEdgeCaseTests {
             .userSessionBecameActive(at: now.addingTimeInterval(60)),
             to: satisfied
         )
-        #expect(conditionTransition.hook.state == .notified)
+        #expect(conditionTransition.hook.state == .deliveringNotification)
         #expect(conditionTransition.effects == [.deliverNotification(satisfied.id)])
 
         let delay = try makeDelay(now: now)
@@ -82,7 +80,7 @@ struct HookLifecycleEdgeCaseTests {
             .userSessionBecameActive(at: now.addingTimeInterval(301)),
             to: delay
         )
-        #expect(delayTransition.hook.state == .notified)
+        #expect(delayTransition.hook.state == .deliveringNotification)
 
         let tooEarly = try HookLifecycle.apply(
             .userSessionBecameActive(at: now.addingTimeInterval(10)),
@@ -183,6 +181,20 @@ struct HookLifecycleEdgeCaseTests {
         }
     }
 
+    @Test("迟到的目标不可用事件不会破坏已通知事实")
+    func targetUnavailableDoesNotReplaceNotifiedState() throws {
+        let now = Date(timeIntervalSince1970: 81_500)
+        var hook = try makeDelay(now: now)
+        hook.state = .notified
+
+        let transition = try HookLifecycle.apply(
+            .targetBecameUnavailable(at: now.addingTimeInterval(1)),
+            to: hook
+        )
+
+        #expect(transition.hook.state == .notified)
+    }
+
     @Test("稍后提醒拒绝非正等待时间和错误状态")
     func snoozeValidation() throws {
         let now = Date(timeIntervalSince1970: 58_000)
@@ -199,11 +211,88 @@ struct HookLifecycleEdgeCaseTests {
         }
     }
 
+    @Test("Condition Hook 稍后提醒也会在最短等待后恢复通知流程")
+    func snoozedConditionUsesMinimumWait() throws {
+        let now = Date(timeIntervalSince1970: 58_250)
+        var condition = try makeCondition(now: now)
+        condition.state = .notified
+        let snoozed = try HookLifecycle.apply(
+            .snoozed(minimumDelay: 300, at: now),
+            to: condition
+        ).hook
+
+        let advanced = try HookLifecycle.apply(
+            .timeAdvanced(to: now.addingTimeInterval(300)),
+            to: snoozed
+        ).hook
+        #expect(advanced.state == .waitingInterruptible)
+
+        let sessionTransition = try HookLifecycle.apply(
+            .userSessionBecameActive(at: now.addingTimeInterval(300)),
+            to: snoozed
+        )
+        #expect(sessionTransition.hook.state == .deliveringNotification)
+        #expect(sessionTransition.effects == [.deliverNotification(condition.id)])
+    }
+
+    @Test("通知交付与终态事件拒绝不允许的生命周期状态")
+    func notificationAndTerminalEventsValidateState() throws {
+        let now = Date(timeIntervalSince1970: 58_500)
+        var condition = try makeCondition(now: now)
+        condition.state = .waitingInterruptible
+
+        #expect(throws: HookLifecycleError.invalidState(.waitingInterruptible)) {
+            try HookLifecycle.apply(.conditionEvaluated(.matched, at: now), to: condition)
+        }
+        let unchanged = try HookLifecycle.apply(.timeAdvanced(to: now), to: try makeDelay(now: now).withState(.notified))
+        #expect(unchanged.hook.state == .notified)
+        #expect(throws: HookLifecycleError.invalidState(.waitingInterruptible)) {
+            try HookLifecycle.apply(.notificationDelivered(at: now), to: condition)
+        }
+        #expect(throws: HookLifecycleError.invalidState(.waitingInterruptible)) {
+            try HookLifecycle.apply(
+                .notificationDeliveryFailed(.notificationPermissionMissing, at: now),
+                to: condition
+            )
+        }
+        #expect(throws: HookLifecycleError.invalidState(.waitingInterruptible)) {
+            try HookLifecycle.apply(.notificationDeliveryDeferred(at: now), to: condition)
+        }
+
+        let delivering = try HookLifecycle.apply(
+            .interruptibilityEvaluated(.interruptible, at: now),
+            to: condition
+        ).hook
+        let deferred = try HookLifecycle.apply(
+            .notificationDeliveryDeferred(at: now.addingTimeInterval(1)),
+            to: delivering
+        ).hook
+        #expect(deferred.state == .waitingInterruptible)
+
+        for terminalState in [HookState.notified, .deliveringNotification, .completed, .cancelled] {
+            let terminal = try makeDelay(now: now).withState(terminalState)
+            #expect(throws: HookLifecycleError.invalidState(terminalState)) {
+                try HookLifecycle.apply(.blocked(.modelUnavailable, at: now), to: terminal)
+            }
+            #expect(throws: HookLifecycleError.invalidState(terminalState)) {
+                try HookLifecycle.apply(.unblocked(at: now), to: terminal)
+            }
+        }
+
+        #expect(throws: HookLifecycleError.invalidState(.waitingMinimum)) {
+            try HookLifecycle.apply(.completed(at: now), to: try makeDelay(now: now))
+        }
+        #expect(throws: HookLifecycleError.invalidState(.deliveringNotification)) {
+            try HookLifecycle.apply(.cancelled(at: now), to: delivering)
+        }
+    }
+
     @Test("浏览器目标区域和 Codable 往返保持一致")
     func browserTargetCodableRoundTrip() throws {
         let target = HookTarget.browser(
             BrowserTarget(
                 browserBundleIdentifier: "com.google.Chrome",
+                nativeWindowIdentifier: 11,
                 extensionInstallationID: "extension-id",
                 tabIdentifier: 11,
                 host: "example.com",
@@ -252,5 +341,13 @@ struct HookLifecycleEdgeCaseTests {
                 normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1)
             )
         )
+    }
+}
+
+private extension Hook {
+    func withState(_ state: HookState) -> Hook {
+        var copy = self
+        copy.state = state
+        return copy
     }
 }

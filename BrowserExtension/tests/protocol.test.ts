@@ -4,22 +4,68 @@ import { isNormalizedRegion, parseNativeCommand } from "../src/protocol";
 describe("native protocol", () => {
   it("parses supported commands", () => {
     expect(parseNativeCommand({ type: "ping" })).toEqual({ type: "ping" });
-    expect(parseNativeCommand({ type: "unbindTarget", hookID: "hook-1" })).toEqual({
+    expect(parseNativeCommand({
+      type: "resolveActiveHost",
+      requestID: "active-host-1"
+    })).toEqual({
+      type: "resolveActiveHost",
+      requestID: "active-host-1"
+    });
+    expect(
+      parseNativeCommand({
+        type: "resolveSelection",
+        requestID: "request-1",
+        windowFrame: { x: 0, y: 0, width: 1_000, height: 800 },
+        selectionRect: { x: 100, y: 200, width: 300, height: 200 }
+      })
+    ).toEqual({
+      type: "resolveSelection",
+      requestID: "request-1",
+      windowFrame: { x: 0, y: 0, width: 1_000, height: 800 },
+      selectionRect: { x: 100, y: 200, width: 300, height: 200 }
+    });
+    expect(parseNativeCommand({
       type: "unbindTarget",
+      extensionInstallationID: "installation-1",
       hookID: "hook-1"
+    })).toEqual({
+      type: "unbindTarget",
+      extensionInstallationID: "installation-1",
+      hookID: "hook-1"
+    });
+    expect(parseNativeCommand({
+      type: "focusTarget",
+      extensionInstallationID: "installation-1",
+      hookID: "hook-1",
+      tabID: 7,
+      expectedHost: "example.com",
+      expectedURL: "https://example.com/build"
+    })).toEqual({
+      type: "focusTarget",
+      extensionInstallationID: "installation-1",
+      hookID: "hook-1",
+      tabID: 7,
+      expectedHost: "example.com",
+      expectedURL: "https://example.com/build"
     });
     expect(
       parseNativeCommand({
         type: "bindTarget",
+        extensionInstallationID: "installation-1",
         hookID: "hook-1",
         tabID: 7,
+        expectedHost: "example.com",
+        expectedURL: "https://example.com/build",
         region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
         requirePixels: true
       })
     ).toEqual({
       type: "bindTarget",
+      extensionInstallationID: "installation-1",
       hookID: "hook-1",
       tabID: 7,
+      expectedHost: "example.com",
+      expectedURL: "https://example.com/build",
       region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
       requirePixels: true
     });
@@ -29,6 +75,7 @@ describe("native protocol", () => {
     expect(parseNativeCommand(null)).toBeNull();
     expect(parseNativeCommand([])).toBeNull();
     expect(parseNativeCommand({ type: "unknown" })).toBeNull();
+    expect(parseNativeCommand({ type: "resolveSelection", requestID: "missing-rects" })).toBeNull();
     expect(parseNativeCommand({ type: "unbindTarget" })).toBeNull();
     expect(
       parseNativeCommand({

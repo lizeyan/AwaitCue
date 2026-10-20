@@ -13,7 +13,7 @@ struct OpenAIResponsesClientTests {
             return try stubbedResponse(
                 for: request,
                 statusCode: 200,
-                body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"构建状态显示成功\",\"requiredEvidence\":\"domAndImage\"}"}]}]}"#
+                body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"构建状态显示成功\",\"requiredEvidence\":\"domAndImage\",\"currentDecision\":\"notMatched\",\"confidence\":0.82}"}]}]}"#
             )
         }
         let client = OpenAIResponsesClient(
@@ -33,7 +33,9 @@ struct OpenAIResponsesClientTests {
         #expect(
             result == PreparedCondition(
                 confirmedSummary: "构建状态显示成功",
-                requiredEvidence: .domAndImage
+                requiredEvidence: .domAndImage,
+                currentDecision: .notMatched,
+                confidence: 0.82
             )
         )
         let bodyData = try #require(recorder.request?.httpBody)
@@ -302,7 +304,7 @@ struct OpenAIResponsesClientTests {
                 try stubbedResponse(
                     for: request,
                     statusCode: 200,
-                    body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"  \",\"requiredEvidence\":\"dom\"}"}]}]}"#
+                    body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"  \",\"requiredEvidence\":\"dom\",\"currentDecision\":\"uncertain\",\"confidence\":0.2}"}]}]}"#
                 )
             }
         )
@@ -361,6 +363,33 @@ struct OpenAIResponsesClientTests {
         await #expect(throws: OpenAIResponsesClientError.invalidResponse) {
             try await client.evaluateCondition(fixtureConditionRequest())
         }
+    }
+
+    @Test("远端模型必须使用 HTTPS，只有 loopback 开发端点允许 HTTP")
+    func rejectsRemotePlaintextHTTP() async throws {
+        let insecure = OpenAIResponsesClient(
+            baseURL: URL(string: "http://model.example/v1")!,
+            apiKey: "test-key",
+            model: "vision-model",
+            session: makeStubbedSession { _ in throw URLError(.unknown) }
+        )
+        await #expect(throws: OpenAIResponsesClientError.invalidConfiguration) {
+            try await insecure.evaluateCondition(fixtureConditionRequest())
+        }
+
+        let loopback = OpenAIResponsesClient(
+            baseURL: URL(string: "http://127.0.0.1:8080/v1")!,
+            apiKey: "test-key",
+            model: "vision-model",
+            session: makeStubbedSession { request in
+                try stubbedResponse(
+                    for: request,
+                    statusCode: 200,
+                    body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"decision\":\"matched\",\"confidence\":1}"}]}]}"#
+                )
+            }
+        )
+        #expect(try await loopback.evaluateCondition(fixtureConditionRequest()).decision == .matched)
     }
 }
 

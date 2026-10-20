@@ -19,6 +19,9 @@ public enum HookEvent: Sendable {
     case conditionEvaluated(ConditionDecision, confidence: Double = 1, at: Date)
     case timeAdvanced(to: Date)
     case interruptibilityEvaluated(InterruptibilityDecision, confidence: Double = 1, at: Date)
+    case notificationDelivered(at: Date)
+    case notificationDeliveryFailed(HookBlockReason, at: Date)
+    case notificationDeliveryDeferred(at: Date)
     case snoozed(minimumDelay: TimeInterval, at: Date)
     case userSessionBecameActive(at: Date)
     case targetBecameUnavailable(at: Date)
@@ -99,9 +102,6 @@ public enum HookLifecycle {
             hook.updatedAt = evaluatedAt
 
         case let .timeAdvanced(currentTime):
-            guard case .delay = hook.trigger else {
-                throw HookLifecycleError.triggerDoesNotSupportEvent
-            }
             guard hook.state == .waitingMinimum else {
                 return HookTransition(hook: hook)
             }
@@ -124,10 +124,33 @@ public enum HookLifecycle {
             )
             hook.updatedAt = evaluatedAt
             if decision == .interruptible {
-                hook.state = .notified
-                hook.notifiedAt = evaluatedAt
+                hook.state = .deliveringNotification
                 effects.append(.deliverNotification(hook.id))
             }
+
+        case let .notificationDelivered(deliveredAt):
+            guard hook.state == .deliveringNotification else {
+                throw HookLifecycleError.invalidState(hook.state)
+            }
+            hook.state = .notified
+            hook.notifiedAt = deliveredAt
+            hook.blockReason = nil
+            hook.updatedAt = deliveredAt
+
+        case let .notificationDeliveryFailed(reason, failedAt):
+            guard hook.state == .deliveringNotification else {
+                throw HookLifecycleError.invalidState(hook.state)
+            }
+            hook.state = .waitingInterruptible
+            hook.blockReason = reason
+            hook.updatedAt = failedAt
+
+        case let .notificationDeliveryDeferred(deferredAt):
+            guard hook.state == .deliveringNotification else {
+                throw HookLifecycleError.invalidState(hook.state)
+            }
+            hook.state = .waitingInterruptible
+            hook.updatedAt = deferredAt
 
         case let .snoozed(minimumDelay, snoozedAt):
             guard minimumDelay > 0 else {
@@ -142,31 +165,30 @@ public enum HookLifecycle {
             hook.updatedAt = snoozedAt
 
         case let .userSessionBecameActive(activeAt):
-            let delayElapsedWhileInactive: Bool
-            if case .delay = hook.trigger,
-               let earliestAttentionAt = hook.earliestAttentionAt
-            {
-                delayElapsedWhileInactive = activeAt >= earliestAttentionAt
-            } else {
-                delayElapsedWhileInactive = false
-            }
+            let minimumWaitElapsed = hook.earliestAttentionAt
+                .map { activeAt >= $0 }
+                ?? false
 
             if hook.state == .waitingInterruptible
-                || (hook.state == .waitingMinimum && delayElapsedWhileInactive)
+                || (hook.state == .waitingMinimum && minimumWaitElapsed)
             {
-                hook.state = .notified
-                hook.notifiedAt = activeAt
+                hook.state = .deliveringNotification
                 hook.updatedAt = activeAt
                 effects.append(.deliverNotification(hook.id))
             }
 
         case let .targetBecameUnavailable(changedAt):
-            guard hook.state != .completed, hook.state != .cancelled else {
+            switch hook.state {
+            case .observing, .waitingMinimum, .waitingInterruptible, .draft, .targetUnavailable:
+                hook.state = .targetUnavailable
+                hook.blockReason = nil
+                hook.updatedAt = changedAt
+            case .deliveringNotification, .notified:
+                // 条件已经满足且通知已开始交付后，迟到的目标事件不能抹掉这一事实。
+                break
+            case .completed, .cancelled:
                 throw HookLifecycleError.invalidState(hook.state)
             }
-            hook.state = .targetUnavailable
-            hook.blockReason = nil
-            hook.updatedAt = changedAt
 
         case let .targetRebound(target, reboundAt):
             guard hook.state == .targetUnavailable else {
@@ -190,10 +212,24 @@ public enum HookLifecycle {
             }
 
         case let .blocked(reason, blockedAt):
+            guard hook.state != .completed,
+                  hook.state != .cancelled,
+                  hook.state != .notified,
+                  hook.state != .deliveringNotification
+            else {
+                throw HookLifecycleError.invalidState(hook.state)
+            }
             hook.blockReason = reason
             hook.updatedAt = blockedAt
 
         case let .unblocked(unblockedAt):
+            guard hook.state != .completed,
+                  hook.state != .cancelled,
+                  hook.state != .notified,
+                  hook.state != .deliveringNotification
+            else {
+                throw HookLifecycleError.invalidState(hook.state)
+            }
             hook.blockReason = nil
             hook.updatedAt = unblockedAt
 
@@ -206,7 +242,10 @@ public enum HookLifecycle {
             hook.updatedAt = completedAt
 
         case let .cancelled(cancelledAt):
-            guard hook.state != .completed, hook.state != .cancelled else {
+            guard hook.state != .completed,
+                  hook.state != .cancelled,
+                  hook.state != .deliveringNotification
+            else {
                 throw HookLifecycleError.invalidState(hook.state)
             }
             hook.state = .cancelled

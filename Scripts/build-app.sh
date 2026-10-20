@@ -13,6 +13,7 @@ swift build -c "${configuration}"
 rm -rf "${app_path}"
 mkdir -p "${app_path}/Contents/MacOS" "${app_path}/Contents/Resources"
 cp "${bin_path}/AwaitCue" "${app_path}/Contents/MacOS/AwaitCue"
+cp "${bin_path}/AwaitCueNativeHost" "${app_path}/Contents/MacOS/AwaitCueNativeHost"
 cp Config/Info.plist "${app_path}/Contents/Info.plist"
 
 if [[ -d "${bin_path}/AwaitCue_AwaitCueApp.bundle" ]]; then

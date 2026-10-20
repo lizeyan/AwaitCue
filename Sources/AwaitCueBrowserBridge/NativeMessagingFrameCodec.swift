@@ -7,7 +7,10 @@ public enum NativeMessagingFrameError: Error, Equatable {
 
 /// 编码 Chromium Native Messaging 使用的四字节 little-endian 长度帧。
 public enum NativeMessagingFrameCodec {
+    /// Native application 发往 Chromium 的官方上限。
     public static let maximumMessageSize = 1_048_576
+    /// Chromium 发往 native application 的官方上限。
+    public static let maximumIncomingMessageSize = 64 * 1_048_576
 
     /// 将 Codable 消息编码为一帧完整的 Native Messaging 数据。
     public static func encode<T: Encodable>(
@@ -32,8 +35,11 @@ public enum NativeMessagingFrameCodec {
 /// 支持标准输入任意分片方式的增量 Native Messaging 解码器。
 public struct NativeMessagingFrameDecoder: Sendable {
     private var buffer = Data()
+    private let maximumMessageSize: Int
 
-    public init() {}
+    public init(maximumMessageSize: Int = NativeMessagingFrameCodec.maximumMessageSize) {
+        self.maximumMessageSize = maximumMessageSize
+    }
 
     /// 追加一段字节并返回当前已经完整到达的 JSON payload。
     public mutating func append<D: DataProtocol>(_ data: D) throws -> [Data] {
@@ -47,7 +53,7 @@ public struct NativeMessagingFrameDecoder: Sendable {
                     | UInt32(buffer[buffer.startIndex + 2]) << 16
                     | UInt32(buffer[buffer.startIndex + 3]) << 24
             )
-            guard length <= NativeMessagingFrameCodec.maximumMessageSize else {
+            guard length <= maximumMessageSize else {
                 throw NativeMessagingFrameError.messageTooLarge(length)
             }
             guard buffer.count >= 4 + length else { break }

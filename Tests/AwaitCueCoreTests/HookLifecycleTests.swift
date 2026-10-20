@@ -79,8 +79,33 @@ struct HookLifecycleTests {
             .interruptibilityEvaluated(.interruptible, at: now),
             to: hook
         )
-        #expect(ready.hook.state == .notified)
+        #expect(ready.hook.state == .deliveringNotification)
         #expect(ready.effects == [.deliverNotification(hook.id)])
+
+        let delivered = try HookLifecycle.apply(.notificationDelivered(at: now), to: ready.hook)
+        #expect(delivered.hook.state == .notified)
+    }
+
+    @Test("通知交付失败回到等待状态并保留稳定阻塞原因")
+    func notificationDeliveryFailureReturnsToWaiting() throws {
+        let now = Date(timeIntervalSince1970: 5_500)
+        var hook = Hook.fixtureDelay(
+            createdAt: now.addingTimeInterval(-60),
+            earliestAttentionAt: now
+        )
+        hook.state = .waitingInterruptible
+        let delivering = try HookLifecycle.apply(
+            .interruptibilityEvaluated(.interruptible, at: now),
+            to: hook
+        ).hook
+
+        let failed = try HookLifecycle.apply(
+            .notificationDeliveryFailed(.notificationPermissionMissing, at: now),
+            to: delivering
+        ).hook
+
+        #expect(failed.state == .waitingInterruptible)
+        #expect(failed.blockReason == .notificationPermissionMissing)
     }
 
     @Test("稍后提醒重新进入最短等待而不是固定时间通知")

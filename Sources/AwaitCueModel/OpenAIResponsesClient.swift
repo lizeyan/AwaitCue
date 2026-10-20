@@ -37,8 +37,17 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
                     "type": "string",
                     "enum": ["dom", "image", "domAndImage"],
                 ],
+                "currentDecision": [
+                    "type": "string",
+                    "enum": ["matched", "notMatched", "uncertain"],
+                ],
+                "confidence": [
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                ],
             ],
-            "required": ["confirmedSummary", "requiredEvidence"],
+            "required": ["confirmedSummary", "requiredEvidence", "currentDecision", "confidence"],
             "additionalProperties": false,
         ]
         let evidenceText = request.evidence?.text ?? "（没有额外文字证据）"
@@ -56,12 +65,16 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
         )
         let data = try await send(body)
         let output: PreparationOutput = try decodeStructuredOutput(from: data)
-        guard !output.confirmedSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !output.confirmedSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              (0 ... 1).contains(output.confidence)
+        else {
             throw OpenAIResponsesClientError.invalidStructuredOutput
         }
         return PreparedCondition(
             confirmedSummary: output.confirmedSummary,
-            requiredEvidence: output.requiredEvidence
+            requiredEvidence: output.requiredEvidence,
+            currentDecision: output.currentDecision,
+            confidence: output.confidence
         )
     }
 
@@ -194,9 +207,8 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
     }
 
     private func send(_ body: Data) async throws -> Data {
-        let supportedScheme = baseURL.scheme == "https" || baseURL.scheme == "http"
-        guard supportedScheme,
-              baseURL.host != nil,
+        guard let host = baseURL.host?.lowercased(),
+              Self.isSecureEndpoint(scheme: baseURL.scheme, host: host),
               !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
@@ -224,6 +236,12 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
         } catch {
             throw OpenAIResponsesClientError.transport(.unknown)
         }
+    }
+
+    private static func isSecureEndpoint(scheme: String?, host: String) -> Bool {
+        if scheme == "https" { return true }
+        guard scheme == "http" else { return false }
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
     }
 
     private func decodeStructuredOutput<Output: Decodable>(
@@ -300,6 +318,8 @@ private struct ConditionOutput: Decodable {
 private struct PreparationOutput: Decodable {
     let confirmedSummary: String
     let requiredEvidence: EvidenceRequirement
+    let currentDecision: ConditionDecision
+    let confidence: Double
 }
 
 private struct InterruptibilityOutput: Decodable {

@@ -125,6 +125,7 @@ private func makeConditionHook(id: String, title: String, createdAt: Date) -> Ho
         target: .browser(
             BrowserTarget(
                 browserBundleIdentifier: "com.google.Chrome",
+                nativeWindowIdentifier: 42,
                 extensionInstallationID: "installation-id",
                 tabIdentifier: 42,
                 host: "example.com",
