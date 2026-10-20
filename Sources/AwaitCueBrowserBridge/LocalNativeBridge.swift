@@ -277,8 +277,9 @@ public final class NativeBridgeClient: @unchecked Sendable {
             connection.start(queue: queue)
             // 失效 descriptor 指向的本地端口可能长期停留在 preparing，必须主动结束 native host。
             queue.asyncAfter(deadline: .now() + connectionTimeout) {
-                connection.cancel()
-                gate.resume(throwing: NativeBridgeError.connectionFailed)
+                if gate.resume(throwing: NativeBridgeError.connectionFailed) {
+                    connection.cancel()
+                }
             }
         }
     }
@@ -442,8 +443,9 @@ private func receiveOnePayload(
             }
             // 对端接受 TCP 却不返回认证结果时，同样不能让浏览器 native host 永久挂起。
             queue.asyncAfter(deadline: .now() + timeout) {
-                connection.cancel()
-                gate.resume(throwing: NativeBridgeError.connectionFailed)
+                if gate.resume(throwing: NativeBridgeError.connectionFailed) {
+                    connection.cancel()
+                }
             }
         }
         if let payload = try accumulator.next(appending: chunk) {
@@ -468,19 +470,25 @@ private final class ContinuationGate<Value: Sendable>: @unchecked Sendable {
         self.continuation = continuation
     }
 
-    func resume(returning value: Value) {
+    @discardableResult
+    func resume(returning value: Value) -> Bool {
         let pending = lock.withLock { () -> CheckedContinuation<Value, any Error>? in
             defer { continuation = nil }
             return continuation
         }
-        pending?.resume(returning: value)
+        guard let pending else { return false }
+        pending.resume(returning: value)
+        return true
     }
 
-    func resume(throwing error: any Error) {
+    @discardableResult
+    func resume(throwing error: any Error) -> Bool {
         let pending = lock.withLock { () -> CheckedContinuation<Value, any Error>? in
             defer { continuation = nil }
             return continuation
         }
-        pending?.resume(throwing: error)
+        guard let pending else { return false }
+        pending.resume(throwing: error)
+        return true
     }
 }

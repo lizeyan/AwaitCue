@@ -209,7 +209,6 @@ struct HookRuntimeTests {
         try await runtime.userSessionBecameActive()
         try await runtime.resumePendingNotificationDeliveries()
         try await runtime.evaluateInterruptibility()
-        try await runtime.waitForScheduledRetry()
 
         #expect(await conditionEvidence.callCount == 0)
         #expect(await activeEvidence.callCount == 0)
@@ -628,10 +627,11 @@ struct HookRuntimeTests {
         #expect(failed.blockReason == .notificationPermissionMissing)
         #expect(await clock.deadlines == [now.addingTimeInterval(30)])
 
-        let retry = Task { try await runtime.waitForScheduledRetry() }
         try await waitUntil { await clock.pendingSleepCount == 1 }
         await clock.fireNextSleep()
-        try await retry.value
+        try await waitUntil {
+            await repository.hooksByID[hook.id]?.state == .notified
+        }
 
         let delivered = try #require(await repository.hooks.first)
         #expect(delivered.state == .notified)
@@ -1120,12 +1120,11 @@ struct HookRuntimeTests {
         try await waitUntil { await clock.deadlines.count == 1 }
         #expect(await clock.deadlines == [now.addingTimeInterval(30)])
 
-        let pendingRetry = Task {
-            try await runtime.waitForScheduledRetry()
-        }
         try await waitUntil { await clock.pendingSleepCount == 1 }
         await clock.fireNextSleep()
-        try await pendingRetry.value
+        try await waitUntil {
+            await repository.hooksByID[hook.id]?.state == .notified
+        }
 
         let retriedState = try #require(await repository.hooks.first)
         #expect(retriedState.state == .notified)

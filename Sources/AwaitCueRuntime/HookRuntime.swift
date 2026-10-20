@@ -215,12 +215,6 @@ public actor HookRuntime {
         try await evaluateInterruptibilityWithoutCancellingRetry()
     }
 
-    /// 等待当前已经安排的一次重试完成，并把协调或副作用错误交还调用方。
-    public func waitForScheduledRetry() async throws {
-        guard let task = interruptibilityRetryTask else { return }
-        try await task.value
-    }
-
     /// 取消等待中的共享重试；已经持久化的 Hook 状态不受影响。
     public func stop() {
         isStopped = true
