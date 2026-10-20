@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a focused improvement that preserves AwaitCue's product objective.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the concrete situation that is not handled today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest behavior that would solve the problem.
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Product boundaries
+      options:
+        - label: This is not a strict timer or forced notification feature.
+          required: true
+        - label: This does not require storing screenshots or DOM history.
+          required: true
+        - label: This does not silently automate actions in another app.
+          required: true
