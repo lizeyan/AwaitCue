@@ -9,7 +9,7 @@ AwaitCue handles screen content that may include source code, documents, message
 - API keys are stored in macOS Keychain.
 - Structured logs contain identifiers, decision enums, confidence, and sanitized error categories only.
 - Telemetry and crash reporting are disabled in the initial release.
-- User-configured bundle IDs and active Chromium hosts are checked locally before current-activity capture. A match is classified as not appropriate to interrupt without taking or uploading that screenshot. When host exclusions exist but the active Chromium host cannot be resolved unambiguously, AwaitCue also declines to capture.
+- User-configured bundle IDs and active Chromium hosts are checked locally before current-activity capture. Chromium context is checked again after capture, and the in-memory image is discarded unless the same browser installation, window, tab, and host remain active. A match or ambiguous result is classified as not appropriate to interrupt without uploading that screenshot.
 - Exiting the menu bar app stops observation and browser capture.
 
 ## Model endpoint boundary
@@ -28,7 +28,7 @@ Text and images from observed apps are data, never instructions. Model instructi
 
 DOM observation is preferred. Pixel-only browser Targets require an explicit user action to start `tabCapture`. The extension must request video only, use the lowest practical frame rate and resolution, and close the stream when the Hook completes, becomes unavailable, is cancelled, or the native app disconnects.
 
-The Chromium native host does not own Hook state. It authenticates to a loopback-only menu bar relay with a random token stored in a `0600` descriptor, then forwards already-framed JSON. When the menu bar app exits, the relay disappears and the host reports `native_app_unavailable`.
+The Chromium native host does not own Hook state. It authenticates to a loopback-only menu bar relay with a random token stored in a `0600` descriptor, then forwards already-framed JSON. Either forwarding direction ending terminates the dedicated host process, so closing the menu bar app disconnects the extension and stops its DOM observers and capture streams.
 
 The native host also attaches the operating-system bundle identity of the browser process that launched it. The menu bar app rejects cross-browser responses and ambiguous multi-profile active-host results. Arc layouts whose sidebar or docked tools make the viewport origin unprovable are rejected rather than approximated.
 

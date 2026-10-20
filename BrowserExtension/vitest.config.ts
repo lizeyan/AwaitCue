@@ -7,7 +7,9 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
-      include: ["src/protocol.ts", "src/region.ts", "src/domEvidence.ts", "src/captureSession.ts", "src/browserSelection.ts"],
+      include: ["src/**/*.ts"],
+      // Chrome API 入口只能在真实扩展环境执行；业务解析、几何、证据和 capture 生命周期必须计入门禁。
+      exclude: ["src/background.ts", "src/content.ts", "src/offscreen.ts"],
       thresholds: {
         lines: 90,
         functions: 90,

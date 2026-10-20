@@ -92,7 +92,7 @@ Unpacked extension IDs can differ by browser and profile, so the installer accep
 
 Arc support is experimental. AwaitCue safely rejects selections when a visible Arc sidebar, docked DevTools, or another wide asymmetric browser-chrome layout prevents the extension from proving the page viewport's screen origin; it never falls back to a guessed region. Hiding the sidebar may allow selection, but Chrome remains the reference browser for the current release.
 
-The protected `master` branch requires every PR check to pass. Swift and TypeScript coverage are each required to remain at or above 90%.
+The protected `master` branch requires every PR check to pass. Testable Swift library seams and TypeScript business modules are each required to remain at or above 90% coverage. Thin AppKit/TCC, native-host stdio, and Chrome API entrypoints are excluded from automated coverage and must pass build plus real-environment smoke validation.
 
 The global Hook shortcut is `Command-Shift-Space`. It freezes every display in memory, enforces a single-window selection, and then opens the Condition/Delay creation sheet.
 

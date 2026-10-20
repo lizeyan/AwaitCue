@@ -6,8 +6,9 @@ readonly threshold="${SWIFT_COVERAGE_THRESHOLD:-90}"
 readonly bin_path="$(swift build --show-bin-path)"
 readonly test_binary="${bin_path}/AwaitCuePackageTests.xctest/Contents/MacOS/AwaitCuePackageTests"
 readonly profile="${bin_path}/codecov/default.profdata"
-# AppKit overlay、真实桌面冻结和系统窗口顺序需要 TCC/真实桌面 smoke test；自动覆盖率只统计其可替换的业务 seam。
-readonly ignore_regex='(.build|Tests|AwaitCueApp|resource_bundle_accessor|Placeholder|AppKitGlobalSelectionOverlayPresenter|FrozenScreenFrameProvider|CoreGraphicsWindowZOrderProvider)'
+# 只排除必须依赖真实 TCC/桌面会话的薄系统适配文件；所有可替换的 Swift 业务 seam 都计入 90% 门禁。
+# SwiftPM 测试二进制不会链接 AwaitCueApp/AwaitCueNativeHost executable，它们由 warnings-as-errors build 与人工 smoke 单独验证。
+readonly ignore_regex='(.build|Tests|resource_bundle_accessor|Placeholder|AppKitGlobalSelectionOverlayPresenter|FrozenScreenFrameProvider|CoreGraphicsWindowZOrderProvider)'
 
 swift test --enable-code-coverage
 
