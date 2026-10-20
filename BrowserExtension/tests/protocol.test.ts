@@ -1,0 +1,46 @@
+import { describe, expect, it } from "vitest";
+import { isNormalizedRegion, parseNativeCommand } from "../src/protocol";
+
+describe("native protocol", () => {
+  it("parses supported commands", () => {
+    expect(parseNativeCommand({ type: "ping" })).toEqual({ type: "ping" });
+    expect(parseNativeCommand({ type: "unbindTarget", hookID: "hook-1" })).toEqual({
+      type: "unbindTarget",
+      hookID: "hook-1"
+    });
+    expect(
+      parseNativeCommand({
+        type: "bindTarget",
+        hookID: "hook-1",
+        tabID: 7,
+        region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+        requirePixels: true
+      })
+    ).toEqual({
+      type: "bindTarget",
+      hookID: "hook-1",
+      tabID: 7,
+      region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+      requirePixels: true
+    });
+  });
+
+  it("rejects malformed and out-of-bounds commands", () => {
+    expect(parseNativeCommand(null)).toBeNull();
+    expect(parseNativeCommand([])).toBeNull();
+    expect(parseNativeCommand({ type: "unknown" })).toBeNull();
+    expect(parseNativeCommand({ type: "unbindTarget" })).toBeNull();
+    expect(
+      parseNativeCommand({
+        type: "bindTarget",
+        hookID: "hook-1",
+        tabID: "7",
+        region: { x: 0, y: 0, width: 1, height: 1 },
+        requirePixels: false
+      })
+    ).toBeNull();
+    expect(isNormalizedRegion({ x: 0.8, y: 0.8, width: 0.5, height: 0.5 })).toBe(false);
+    expect(isNormalizedRegion({ x: Number.NaN, y: 0, width: 1, height: 1 })).toBe(false);
+    expect(isNormalizedRegion("region")).toBe(false);
+  });
+});
