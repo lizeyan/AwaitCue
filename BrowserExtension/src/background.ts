@@ -178,8 +178,8 @@ async function handleNativeCommand(value: unknown): Promise<void> {
 
 async function resolveActiveHost(requestID: string): Promise<void> {
   const windows = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
-  const host = uniqueFocusedActiveHost(windows);
-  if (!host) {
+  const context = uniqueFocusedActiveHost(windows);
+  if (!context) {
     postEvent({
       type: "activeHostResolved",
       requestID,
@@ -193,7 +193,9 @@ async function resolveActiveHost(requestID: string): Promise<void> {
     requestID,
     matched: true,
     extensionInstallationID: await installationIdentityPromise,
-    host
+    host: context.host,
+    tabID: context.tabID,
+    browserWindowID: context.browserWindowID
   });
 }
 

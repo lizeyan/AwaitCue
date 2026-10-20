@@ -33,24 +33,38 @@ export function uniqueMatchingWindow<T extends ScreenRect>(
 }
 
 type BrowserWindowState = Readonly<{
+  id?: number | undefined;
   focused?: boolean | undefined;
   tabs?: readonly Readonly<{
+    id?: number | undefined;
     active?: boolean | undefined;
     url?: string | undefined;
   }>[] | undefined;
 }>;
 
-/** 仅当一个 installation 内恰好一个 focused 窗口拥有一个 HTTP(S) active tab 时返回 host。 */
-export function uniqueFocusedActiveHost(windows: readonly BrowserWindowState[]): string | null {
+export type FocusedActiveBrowserContext = Readonly<{
+  host: string;
+  tabID: number;
+  browserWindowID: number;
+}>;
+
+/** 仅当一个 installation 内恰好一个 focused 窗口拥有一个 HTTP(S) active tab 时返回稳定身份。 */
+export function uniqueFocusedActiveHost(
+  windows: readonly BrowserWindowState[]
+): FocusedActiveBrowserContext | null {
   const focusedWindows = windows.filter((candidate) => candidate.focused === true);
   if (focusedWindows.length !== 1) return null;
+  const focusedWindow = focusedWindows[0];
+  if (typeof focusedWindow?.id !== "number") return null;
   const activeTabs = (focusedWindows[0]?.tabs ?? []).filter(
-    (candidate) => candidate.active === true && typeof candidate.url === "string"
+    (candidate) => candidate.active === true && typeof candidate.id === "number" && typeof candidate.url === "string"
   );
   if (activeTabs.length !== 1) return null;
   try {
     const url = new URL(activeTabs[0]!.url!);
-    return (url.protocol === "http:" || url.protocol === "https:") && url.host ? url.host : null;
+    return (url.protocol === "http:" || url.protocol === "https:") && url.host
+      ? { host: url.host, tabID: activeTabs[0]!.id!, browserWindowID: focusedWindow.id }
+      : null;
   } catch {
     return null;
   }

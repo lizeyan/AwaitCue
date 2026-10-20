@@ -53,10 +53,10 @@ describe("browser selection mapping", () => {
   });
 
   it("returns an active host only for one focused browser window", () => {
-    const focused = { focused: true, tabs: [{ active: true, url: "https://build.example/job" }] };
-    expect(uniqueFocusedActiveHost([focused])).toBe("build.example");
-    expect(uniqueFocusedActiveHost([focused, { ...focused, tabs: [{ active: true, url: "https://mail.example" }] }])).toBeNull();
-    expect(uniqueFocusedActiveHost([{ focused: true, tabs: [{ active: true, url: "chrome://settings" }] }])).toBeNull();
+    const focused = { id: 9, focused: true, tabs: [{ id: 7, active: true, url: "https://build.example/job" }] };
+    expect(uniqueFocusedActiveHost([focused])).toEqual({ host: "build.example", tabID: 7, browserWindowID: 9 });
+    expect(uniqueFocusedActiveHost([focused, { ...focused, id: 10, tabs: [{ id: 8, active: true, url: "https://mail.example" }] }])).toBeNull();
+    expect(uniqueFocusedActiveHost([{ id: 9, focused: true, tabs: [{ id: 7, active: true, url: "chrome://settings" }] }])).toBeNull();
     expect(uniqueFocusedActiveHost([{ focused: false, tabs: focused.tabs }])).toBeNull();
   });
 

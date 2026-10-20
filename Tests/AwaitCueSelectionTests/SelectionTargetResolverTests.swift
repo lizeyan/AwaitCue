@@ -52,25 +52,43 @@ struct SelectionTargetResolverTests {
         collector.record(
             browserBundleIdentifier: "company.thebrowser.Browser",
             extensionInstallationID: "arc-1",
+            tabIdentifier: 1,
+            browserWindowIdentifier: 1,
             host: "wrong.example"
         )
         collector.record(
             browserBundleIdentifier: "com.google.Chrome",
             extensionInstallationID: "chrome-1",
+            tabIdentifier: 7,
+            browserWindowIdentifier: 9,
             host: "build.example"
         )
         // 同一个 installation 的重复响应必须去重。
         collector.record(
             browserBundleIdentifier: "com.google.Chrome",
             extensionInstallationID: "chrome-1",
+            tabIdentifier: 7,
+            browserWindowIdentifier: 9,
             host: "build.example"
         )
 
-        #expect(collector.resolution == .resolved(host: "build.example"))
+        #expect(
+            collector.resolution
+                == .resolved(
+                    ActiveBrowserContext(
+                        extensionInstallationID: "chrome-1",
+                        tabIdentifier: 7,
+                        browserWindowIdentifier: 9,
+                        host: "build.example"
+                    )
+                )
+        )
 
         collector.record(
             browserBundleIdentifier: "com.google.Chrome",
             extensionInstallationID: "chrome-2",
+            tabIdentifier: 8,
+            browserWindowIdentifier: 10,
             host: "mail.example"
         )
         #expect(collector.resolution == .unavailable)

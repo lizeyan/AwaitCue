@@ -85,6 +85,8 @@ export type ExtensionEvent =
       matched: boolean;
       extensionInstallationID: string;
       host?: string;
+      tabID?: number;
+      browserWindowID?: number;
     }>
   | Readonly<{
       type: "selectionResolved";

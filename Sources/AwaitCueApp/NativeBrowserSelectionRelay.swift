@@ -352,6 +352,8 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
               var pendingHost = pendingActiveHosts[requestID],
               let browserBundleIdentifier = object["browserBundleIdentifier"] as? String,
               let extensionInstallationID = object["extensionInstallationID"] as? String,
+              let tabID = object["tabID"] as? Int,
+              let browserWindowID = object["browserWindowID"] as? Int,
               let host = object["host"] as? String
         else {
             return
@@ -359,6 +361,8 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         pendingHost.collector.record(
             browserBundleIdentifier: browserBundleIdentifier,
             extensionInstallationID: extensionInstallationID,
+            tabIdentifier: tabID,
+            browserWindowIdentifier: browserWindowID,
             host: host
         )
         pendingActiveHosts[requestID] = pendingHost

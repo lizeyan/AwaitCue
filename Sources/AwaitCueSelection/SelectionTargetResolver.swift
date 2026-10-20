@@ -52,11 +52,30 @@ public struct BrowserSelectionMatchCollector: Sendable {
 }
 
 /// 当前前台浏览器 host 查询的安全结果。
+public struct ActiveBrowserContext: Equatable, Hashable, Sendable {
+    public let extensionInstallationID: String
+    public let tabIdentifier: Int
+    public let browserWindowIdentifier: Int
+    public let host: String
+
+    public init(
+        extensionInstallationID: String,
+        tabIdentifier: Int,
+        browserWindowIdentifier: Int,
+        host: String
+    ) {
+        self.extensionInstallationID = extensionInstallationID
+        self.tabIdentifier = tabIdentifier
+        self.browserWindowIdentifier = browserWindowIdentifier
+        self.host = host
+    }
+}
+
 public enum ActiveBrowserHostResolution: Equatable, Sendable {
     /// 前台应用不是 Selection 模块支持的 Chromium 浏览器。
     case notBrowser
     /// 恰好一个匹配 browser bundle 的 installation 返回了活动标签页 host。
-    case resolved(host: String)
+    case resolved(ActiveBrowserContext)
     /// 没有可信响应，或多个 installation 同时声称自己是前台窗口。
     case unavailable
 }
@@ -73,6 +92,8 @@ public protocol ActiveBrowserHostResolving: Sendable {
 public struct ActiveBrowserHostMatchCollector: Sendable {
     private struct Match: Hashable, Sendable {
         let extensionInstallationID: String
+        let tabIdentifier: Int
+        let browserWindowIdentifier: Int
         let host: String
     }
 
@@ -86,6 +107,8 @@ public struct ActiveBrowserHostMatchCollector: Sendable {
     public mutating func record(
         browserBundleIdentifier: String,
         extensionInstallationID: String,
+        tabIdentifier: Int,
+        browserWindowIdentifier: Int,
         host: String
     ) {
         guard
@@ -95,14 +118,28 @@ public struct ActiveBrowserHostMatchCollector: Sendable {
         else {
             return
         }
-        matches.insert(Match(extensionInstallationID: extensionInstallationID, host: host))
+        matches.insert(
+            Match(
+                extensionInstallationID: extensionInstallationID,
+                tabIdentifier: tabIdentifier,
+                browserWindowIdentifier: browserWindowIdentifier,
+                host: host
+            )
+        )
     }
 
     public var resolution: ActiveBrowserHostResolution {
         guard matches.count == 1, let match = matches.first else {
             return .unavailable
         }
-        return .resolved(host: match.host)
+        return .resolved(
+            ActiveBrowserContext(
+                extensionInstallationID: match.extensionInstallationID,
+                tabIdentifier: match.tabIdentifier,
+                browserWindowIdentifier: match.browserWindowIdentifier,
+                host: match.host
+            )
+        )
     }
 }
 

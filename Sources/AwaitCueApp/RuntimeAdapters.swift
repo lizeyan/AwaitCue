@@ -96,6 +96,7 @@ struct AppActiveEvidenceProvider: HookRuntimeActiveEvidenceProvider {
             // 排除判断必须发生在窗口发现和截图之前，确保像素不会离开本机采集边界。
             throw HookRuntimeEvidenceError.locallyExcluded
         }
+        var verifiedBrowserContext: ActiveBrowserContext?
         if !exclusionRules.browserHosts.isEmpty {
             let browserResolution: ActiveBrowserHostResolution
             do {
@@ -109,10 +110,11 @@ struct AppActiveEvidenceProvider: HookRuntimeActiveEvidenceProvider {
             switch browserResolution {
             case .notBrowser:
                 break
-            case let .resolved(host):
-                guard !exclusionRules.excludes(browserHost: host) else {
+            case let .resolved(context):
+                guard !exclusionRules.excludes(browserHost: context.host) else {
                     throw HookRuntimeEvidenceError.locallyExcluded
                 }
+                verifiedBrowserContext = context
             case .unavailable:
                 // 不猜测 host；否则一次 relay 暂时故障可能把用户排除的页面上传给模型。
                 throw HookRuntimeEvidenceError.locallyExcluded
@@ -138,8 +140,27 @@ struct AppActiveEvidenceProvider: HookRuntimeActiveEvidenceProvider {
         )
         let observation = try await captureService.capture(target)
         guard observation.availability == .available,
-              let image = observation.image,
-              let jpeg = NSBitmapImageRep(cgImage: image).representation(
+              let image = observation.image
+        else {
+            throw HookRuntimeEvidenceError.targetUnavailable
+        }
+        if let verifiedBrowserContext {
+            let afterCapture: ActiveBrowserHostResolution
+            do {
+                afterCapture = try await activeBrowserHostResolver.resolveActiveBrowserHost(
+                    for: bundleIdentifier
+                )
+            } catch {
+                throw HookRuntimeEvidenceError.locallyExcluded
+            }
+            guard afterCapture == .resolved(verifiedBrowserContext),
+                  !exclusionRules.excludes(browserHost: verifiedBrowserContext.host)
+            else {
+                // 标签页在检查与截图之间变化时丢弃内存图像，绝不把竞态中的页面上传给模型。
+                throw HookRuntimeEvidenceError.locallyExcluded
+            }
+        }
+        guard let jpeg = NSBitmapImageRep(cgImage: image).representation(
                 using: .jpeg,
                 properties: [.compressionFactor: 0.55]
               )
