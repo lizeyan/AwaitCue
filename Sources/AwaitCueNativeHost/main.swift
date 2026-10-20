@@ -23,16 +23,19 @@ struct AwaitCueNativeHostMain {
                     client.stop()
                     Foundation.exit(EXIT_SUCCESS)
                 } catch {
+                    writeDiagnostic(stage: "stdin", error: error)
                     client.stop()
                     writeErrorFrame(code: "native_bridge_input_failed")
                     Foundation.exit(EXIT_FAILURE)
                 }
             }
             try await forwardAppMessages(from: client)
+            writeDiagnostic(stage: "relay_eof")
             client.stop()
             Foundation.exit(EXIT_SUCCESS)
         } catch {
-            writeErrorFrame(code: "native_app_unavailable")
+            writeDiagnostic(stage: "startup", error: error)
+            writeErrorFrame(code: errorCode(error))
             Foundation.exit(EXIT_FAILURE)
         }
     }
@@ -74,22 +77,37 @@ struct AwaitCueNativeHostMain {
 
     /// Native host 的父应用由操作系统提供，比扩展自报 user-agent 更适合作为 Chrome/Arc 身份边界。
     private static func launchingBrowserBundleIdentifier() throws -> String {
-        guard
-            let parentBundleIdentifier = NSRunningApplication(
-                processIdentifier: getppid()
-            )?.bundleIdentifier,
-            let browserBundleIdentifier = canonicalBrowserBundleIdentifier(parentBundleIdentifier)
-        else {
-            throw NativeHostError.untrustedBrowserParent
+        let parentPID = getppid()
+        if let parentBundleIdentifier = NSRunningApplication(
+            processIdentifier: parentPID
+        )?.bundleIdentifier,
+           let browserBundleIdentifier = BrowserParentIdentity.canonicalBundleIdentifier(
+            parentBundleIdentifier
+           )
+        {
+            return browserBundleIdentifier
         }
-        return browserBundleIdentifier
-    }
-
-    /// Chrome helper 的 bundle ID 带额外后缀；按最长主 bundle 前缀归一化，避免 Beta 被稳定版前缀吞掉。
-    private static func canonicalBrowserBundleIdentifier(_ bundleIdentifier: String) -> String? {
-        supportedBrowserBundleIdentifiers.first { candidate in
-            bundleIdentifier == candidate || bundleIdentifier.hasPrefix(candidate + ".")
+        var pathBuffer = [CChar](
+            repeating: 0,
+            count: 4 * Int(MAXPATHLEN)
+        )
+        let pathLength = pathBuffer.withUnsafeMutableBufferPointer { buffer in
+            proc_pidpath(parentPID, buffer.baseAddress, UInt32(buffer.count))
         }
+        if pathLength > 0 {
+            let pathBytes = pathBuffer.prefix(Int(pathLength)).map {
+                UInt8(bitPattern: $0)
+            }
+            let executableURL = URL(
+                fileURLWithPath: String(decoding: pathBytes, as: UTF8.self)
+            )
+            if let browserBundleIdentifier = BrowserParentIdentity.bundleIdentifier(
+                containingExecutableAt: executableURL
+            ) {
+                return browserBundleIdentifier
+            }
+        }
+        throw NativeHostError.untrustedBrowserParent
     }
 
     /// 给浏览器发往应用的每条事件覆盖写入操作系统验证过的 browser bundle。
@@ -111,18 +129,32 @@ struct AwaitCueNativeHostMain {
         }
     }
 
-    private static let supportedBrowserBundleIdentifiers = [
-        "com.google.Chrome.canary",
-        "com.google.Chrome.beta",
-        "com.google.Chrome.dev",
-        "com.google.Chrome",
-        "com.microsoft.edgemac.Canary",
-        "com.microsoft.edgemac.Dev",
-        "com.microsoft.edgemac.Beta",
-        "com.microsoft.edgemac",
-        "company.thebrowser.Browser",
-        "org.chromium.Chromium",
-    ]
+    /// 只记录失败阶段和错误类型；不得把浏览器消息、页面地址、token 或 descriptor 内容写入日志。
+    private static func writeDiagnostic(stage: String, error: (any Error)? = nil) {
+        let errorType = error.map { String(reflecting: type(of: $0)) } ?? "none"
+        let line = "AwaitCueNativeHost stage=\(stage) errorType=\(errorType)\n"
+        try? FileHandle.standardError.write(contentsOf: Data(line.utf8))
+    }
+
+    private static func errorCode(_ error: any Error) -> String {
+        if let nativeHostError = error as? NativeHostError {
+            return switch nativeHostError {
+            case .untrustedBrowserParent: "untrusted_browser_parent"
+            case .invalidBrowserPayload: "invalid_browser_payload"
+            }
+        }
+        if let bridgeError = error as? NativeBridgeError {
+            return switch bridgeError {
+            case .invalidDescriptor: "invalid_descriptor"
+            case .listenerFailed: "unexpected_listener_failure"
+            case .connectionFailed: "relay_connection_failed"
+            case .authenticationRejected: "relay_authentication_rejected"
+            case .disconnected: "relay_disconnected"
+            }
+        }
+        return "native_app_unavailable"
+    }
+
 }
 
 private enum NativeHostError: Error {
