@@ -134,7 +134,7 @@ final class AwaitCueApplicationModel: ObservableObject {
             apiKey = ""
             modelStatus = .notConfigured
             confirmedAPIHostname = false
-            await notificationClient.removeAllPendingNotifications()
+            notificationClient.removeAllPendingNotifications()
         } catch {
             startupError = Self.userFacingMessage(for: error)
         }
