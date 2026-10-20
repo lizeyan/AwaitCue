@@ -43,6 +43,26 @@ struct LocalNativeBridgeTests {
         #expect(await clientMessages.next() == fromApp)
     }
 
+    @Test("认证成功后旧 deadline 不会取消已经可用的连接")
+    func successfulConnectionOutlivesAuthenticationDeadline() async throws {
+        let server = NativeBridgeServer(token: "deadline-token")
+        let descriptor = try await server.start()
+        defer { server.stop() }
+        let client = NativeBridgeClient(
+            descriptor: descriptor,
+            connectionTimeout: 0.03
+        )
+        try await client.connect()
+        defer { client.stop() }
+        var serverMessages = server.incomingMessages.makeAsyncIterator()
+
+        try await Task.sleep(for: .milliseconds(100))
+        let payload = Data(#"{"type":"after-deadline"}"#.utf8)
+        try await client.sendPayload(payload)
+
+        #expect(await serverMessages.next() == payload)
+    }
+
     @Test("错误 token 的客户端不会向应用交付消息")
     func invalidAuthenticationIsRejected() async throws {
         let server = NativeBridgeServer(token: "correct-token")
