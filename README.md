@@ -38,9 +38,12 @@ AwaitCue/
 │   ├── AwaitCueApp/             # SwiftUI/AppKit menu bar application
 │   ├── AwaitCueCore/            # Domain types and deterministic lifecycle
 │   ├── AwaitCueCapture/         # ScreenCaptureKit observation adapter
+│   ├── AwaitCueSelection/       # Frozen multi-display selection and Target resolution
 │   ├── AwaitCueModel/           # OpenAI Responses API adapter
 │   ├── AwaitCuePersistence/     # SQLite persistence adapter
-│   └── AwaitCueBrowserBridge/   # Chromium Native Messaging framing
+│   ├── AwaitCueBrowserBridge/   # Authenticated local relay and Native Messaging framing
+│   └── AwaitCueRuntime/         # Observation, retry, decision, and notification orchestration
+├── Sources/AwaitCueNativeHost/  # Chromium-launched stdio relay executable
 ├── Tests/                       # Swift Testing suites at public seams
 ├── BrowserExtension/            # Manifest V3 Chromium extension
 ├── Scripts/                     # Build, package, coverage, and release helpers
@@ -51,7 +54,7 @@ AwaitCue/
 ## Requirements
 
 - macOS 14 or newer
-- Xcode 26 or newer for the current development toolchain
+- Xcode 16.4 or newer
 - Swift 6.0 or newer
 - Node.js 24 LTS and npm 11 for the Chromium extension
 - An image-capable model exposed through the OpenAI Responses API
@@ -77,7 +80,21 @@ npm --prefix BrowserExtension ci
 npm --prefix BrowserExtension run coverage
 ```
 
-The protected `master` branch requires every PR check to pass. Swift and TypeScript coverage are each required to remain at or above 90%.
+Install the native host manifest for an unpacked Chromium extension:
+
+```bash
+AWAITCUE_CHROME_EXTENSION_ID=<chrome-id> \
+AWAITCUE_ARC_EXTENSION_ID=<arc-id> \
+./Scripts/install-native-host.sh /Applications/AwaitCue.app
+```
+
+Unpacked extension IDs can differ by browser and profile, so the installer accepts a separate ID for Chrome, Edge, Chromium, and Arc. The native host only relays messages while the AwaitCue menu bar app is running and has published a private loopback token.
+
+Arc support is experimental. AwaitCue safely rejects selections when a visible Arc sidebar, docked DevTools, or another wide asymmetric browser-chrome layout prevents the extension from proving the page viewport's screen origin; it never falls back to a guessed region. Hiding the sidebar may allow selection, but Chrome remains the reference browser for the current release.
+
+The protected `master` branch requires every PR check to pass. Testable Swift library seams and TypeScript business modules are each required to remain at or above 90% coverage. Thin AppKit/TCC, native-host stdio, and Chrome API entrypoints are excluded from automated coverage and must pass build plus real-environment smoke validation.
+
+The global Hook shortcut is `Command-Shift-Space`. It freezes every display in memory, enforces a single-window selection, and then opens the Condition/Delay creation sheet.
 
 ## Branch policy
 
@@ -97,7 +114,7 @@ AwaitCue observes highly sensitive screen context, so the implementation follows
 - no telemetry or crash reporting in the first release;
 - no keystroke contents or clipboard collection;
 - no background operation after the menu bar app exits;
-- excluded apps and hosts never send screenshots to the model;
+- user-configured bundle IDs and active Chromium hosts are checked locally before current-activity screenshots;
 - every new custom API hostname requires explicit user confirmation;
 - Responses API calls set `store: false`.
 

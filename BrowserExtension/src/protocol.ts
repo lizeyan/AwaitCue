@@ -9,18 +9,51 @@ export type NormalizedRegion = Readonly<{
 
 export type BindTargetCommand = Readonly<{
   type: "bindTarget";
+  extensionInstallationID: string;
   hookID: string;
   tabID: number;
+  expectedHost: string;
+  expectedURL: string;
   region: NormalizedRegion;
   requirePixels: boolean;
 }>;
 
 export type UnbindTargetCommand = Readonly<{
   type: "unbindTarget";
+  extensionInstallationID: string;
   hookID: string;
 }>;
 
-export type NativeCommand = BindTargetCommand | UnbindTargetCommand | Readonly<{ type: "ping" }>;
+export type FocusTargetCommand = Readonly<{
+  type: "focusTarget";
+  extensionInstallationID: string;
+  hookID: string;
+  tabID: number;
+  expectedHost: string;
+  expectedURL: string;
+}>;
+
+export type ScreenRect = Readonly<{ x: number; y: number; width: number; height: number }>;
+
+export type ResolveSelectionCommand = Readonly<{
+  type: "resolveSelection";
+  requestID: string;
+  windowFrame: ScreenRect;
+  selectionRect: ScreenRect;
+}>;
+
+export type ResolveActiveHostCommand = Readonly<{
+  type: "resolveActiveHost";
+  requestID: string;
+}>;
+
+export type NativeCommand =
+  | BindTargetCommand
+  | UnbindTargetCommand
+  | FocusTargetCommand
+  | ResolveSelectionCommand
+  | ResolveActiveHostCommand
+  | Readonly<{ type: "ping" }>;
 
 export type Evidence = Readonly<{
   hookID: string;
@@ -32,12 +65,42 @@ export type Evidence = Readonly<{
 }>;
 
 export type ExtensionEvent =
-  | Readonly<{ type: "ready"; browser: string }>
+  | Readonly<{ type: "ready"; browser: string; extensionInstallationID: string }>
   | Readonly<{ type: "pong" }>
   | Readonly<{ type: "targetBound"; hookID: string; tabID: number }>
-  | Readonly<{ type: "targetUnavailable"; hookID: string; reason: string }>
-  | Readonly<{ type: "evidenceChanged"; evidence: Evidence }>
-  | Readonly<{ type: "captureFrame"; hookID: string; imageDataURL: string; fingerprint: string }>
+  | Readonly<{ type: "targetUnavailable"; extensionInstallationID: string; hookID: string; reason: string }>
+  | Readonly<{ type: "evidenceChanged"; extensionInstallationID: string; evidence: Evidence }>
+  | Readonly<{
+      type: "captureFrame";
+      extensionInstallationID: string;
+      hookID: string;
+      imageDataURL: string;
+      fingerprint: string;
+    }>
+  | Readonly<{ type: "captureAuthorizationRequired"; hookID: string; tabID: number }>
+  | Readonly<{ type: "captureAuthorized"; hookID: string; tabID: number }>
+  | Readonly<{
+      type: "activeHostResolved";
+      requestID: string;
+      matched: boolean;
+      extensionInstallationID: string;
+      host?: string;
+      tabID?: number;
+      browserWindowID?: number;
+    }>
+  | Readonly<{
+      type: "selectionResolved";
+      requestID: string;
+      matched: boolean;
+      target?: Readonly<{
+        extensionInstallationID: string;
+        tabID: number;
+        host: string;
+        url: string;
+        title: string;
+        region: NormalizedRegion;
+      }>;
+    }>
   | Readonly<{ type: "error"; hookID?: string; code: string; message: string }>;
 
 /**
@@ -46,25 +109,79 @@ export type ExtensionEvent =
 export function parseNativeCommand(value: unknown): NativeCommand | null {
   if (!isRecord(value) || typeof value.type !== "string") return null;
   if (value.type === "ping") return { type: "ping" };
-  if (value.type === "unbindTarget" && typeof value.hookID === "string") {
-    return { type: "unbindTarget", hookID: value.hookID };
+  if (value.type === "resolveActiveHost" && typeof value.requestID === "string") {
+    return { type: "resolveActiveHost", requestID: value.requestID };
+  }
+  if (
+    value.type === "resolveSelection" &&
+    typeof value.requestID === "string" &&
+    isScreenRect(value.windowFrame) &&
+    isScreenRect(value.selectionRect)
+  ) {
+    return {
+      type: "resolveSelection",
+      requestID: value.requestID,
+      windowFrame: value.windowFrame,
+      selectionRect: value.selectionRect
+    };
+  }
+  if (
+    value.type === "unbindTarget" &&
+    typeof value.extensionInstallationID === "string" &&
+    typeof value.hookID === "string"
+  ) {
+    return {
+      type: "unbindTarget",
+      extensionInstallationID: value.extensionInstallationID,
+      hookID: value.hookID
+    };
+  }
+  if (
+    value.type === "focusTarget" &&
+    typeof value.extensionInstallationID === "string" &&
+    typeof value.hookID === "string" &&
+    typeof value.tabID === "number" &&
+    typeof value.expectedHost === "string" &&
+    typeof value.expectedURL === "string"
+  ) {
+    return {
+      type: "focusTarget",
+      extensionInstallationID: value.extensionInstallationID,
+      hookID: value.hookID,
+      tabID: value.tabID,
+      expectedHost: value.expectedHost,
+      expectedURL: value.expectedURL
+    };
   }
   if (
     value.type === "bindTarget" &&
+    typeof value.extensionInstallationID === "string" &&
     typeof value.hookID === "string" &&
     typeof value.tabID === "number" &&
+    typeof value.expectedHost === "string" &&
+    typeof value.expectedURL === "string" &&
     typeof value.requirePixels === "boolean" &&
     isNormalizedRegion(value.region)
   ) {
     return {
       type: "bindTarget",
+      extensionInstallationID: value.extensionInstallationID,
       hookID: value.hookID,
       tabID: value.tabID,
+      expectedHost: value.expectedHost,
+      expectedURL: value.expectedURL,
       region: value.region,
       requirePixels: value.requirePixels
     };
   }
   return null;
+}
+
+export function isScreenRect(value: unknown): value is ScreenRect {
+  if (!isRecord(value)) return false;
+  return [value.x, value.y, value.width, value.height].every(
+    (entry) => typeof entry === "number" && Number.isFinite(entry)
+  ) && (value.width as number) > 0 && (value.height as number) > 0;
 }
 
 export function isNormalizedRegion(value: unknown): value is NormalizedRegion {

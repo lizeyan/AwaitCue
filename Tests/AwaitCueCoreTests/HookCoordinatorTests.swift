@@ -85,6 +85,42 @@ struct HookCoordinatorTests {
         }
     }
 
+    @Test("并发生命周期事件不会在 repository await 之间丢失更新")
+    func serializesConcurrentLifecycleMutations() async throws {
+        let now = Date(timeIntervalSince1970: 42_000)
+        var hook = try HookFactory.makeDelay(
+            title: "并发更新",
+            target: fixtureTarget,
+            minimumDelay: 60,
+            now: now.addingTimeInterval(-60)
+        )
+        hook.state = .waitingInterruptible
+        let hookID = hook.id
+        let repository = SuspendingHookRepository(initialHook: hook)
+        let coordinator = HookCoordinator(repository: repository)
+
+        let first = Task {
+            try await coordinator.apply(.blocked(.modelUnavailable, at: now), to: hookID)
+        }
+        try await waitUntil { await repository.loadCount == 1 }
+        let second = Task {
+            try await coordinator.apply(
+                .interruptibilityEvaluated(.notInterruptible, at: now.addingTimeInterval(1)),
+                to: hookID
+            )
+        }
+        for _ in 0 ..< 20 { await Task.yield() }
+
+        #expect(await repository.loadCount == 1)
+        await repository.releaseFirstLoad()
+        _ = try await first.value
+        _ = try await second.value
+
+        let stored = try #require(await repository.currentHook)
+        #expect(stored.blockReason == .modelUnavailable)
+        #expect(stored.lastDecision?.value == InterruptibilityDecision.notInterruptible.rawValue)
+    }
+
     private var fixtureTarget: HookTarget {
         .window(
             WindowTarget(
@@ -95,6 +131,55 @@ struct HookCoordinatorTests {
             )
         )
     }
+}
+
+private actor SuspendingHookRepository: HookRepository {
+    private var hook: Hook?
+    private var firstLoadContinuation: CheckedContinuation<Void, Never>?
+    private(set) var loadCount = 0
+
+    init(initialHook: Hook) {
+        hook = initialHook
+    }
+
+    var currentHook: Hook? { hook }
+
+    func loadHooks() async throws -> [Hook] {
+        loadCount += 1
+        if loadCount == 1 {
+            await withCheckedContinuation { continuation in
+                firstLoadContinuation = continuation
+            }
+        }
+        return hook.map { [$0] } ?? []
+    }
+
+    func save(_ hook: Hook) async throws {
+        self.hook = hook
+    }
+
+    func delete(id: HookID) async throws {
+        if hook?.id == id { hook = nil }
+    }
+
+    func deleteAll() async throws {
+        hook = nil
+    }
+
+    func releaseFirstLoad() {
+        firstLoadContinuation?.resume()
+        firstLoadContinuation = nil
+    }
+}
+
+private func waitUntil(
+    _ condition: @escaping @Sendable () async -> Bool
+) async throws {
+    for _ in 0 ..< 100 {
+        if await condition() { return }
+        await Task.yield()
+    }
+    Issue.record("异步条件未在预期时间内成立")
 }
 
 private actor RecordingHookRepository: HookRepository {

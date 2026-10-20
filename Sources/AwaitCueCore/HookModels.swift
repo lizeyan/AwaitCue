@@ -59,6 +59,7 @@ public struct BrowserTarget: Codable, Equatable, Sendable {
     }
 
     public let browserBundleIdentifier: String
+    public let nativeWindowIdentifier: UInt32
     public let extensionInstallationID: String
     public let tabIdentifier: Int
     public let host: String
@@ -69,6 +70,7 @@ public struct BrowserTarget: Codable, Equatable, Sendable {
 
     public init(
         browserBundleIdentifier: String,
+        nativeWindowIdentifier: UInt32,
         extensionInstallationID: String,
         tabIdentifier: Int,
         host: String,
@@ -78,6 +80,7 @@ public struct BrowserTarget: Codable, Equatable, Sendable {
         observationMode: ObservationMode
     ) {
         self.browserBundleIdentifier = browserBundleIdentifier
+        self.nativeWindowIdentifier = nativeWindowIdentifier
         self.extensionInstallationID = extensionInstallationID
         self.tabIdentifier = tabIdentifier
         self.host = host
@@ -139,6 +142,7 @@ public enum HookState: String, Codable, Sendable {
     case observing
     case waitingMinimum
     case waitingInterruptible
+    case deliveringNotification
     case notified
     case targetUnavailable
     case completed

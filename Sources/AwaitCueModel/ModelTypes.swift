@@ -14,12 +14,26 @@ public struct ModelImage: Equatable, Sendable {
 
 /// 一次模型判断所需的当前证据；调用完成后不应由 adapter 持久化。
 public struct ModelEvidence: Equatable, Sendable {
-    public let text: String?
+    public let contextText: String?
+    public let domText: String?
     public let image: ModelImage?
 
-    public init(text: String? = nil, image: ModelImage? = nil) {
-        self.text = text
+    public init(
+        text: String? = nil,
+        domText: String? = nil,
+        image: ModelImage? = nil
+    ) {
+        contextText = text
+        self.domText = domText
         self.image = image
+    }
+
+    /// 发送给模型的文字视图；来源仍分别保留，Runtime 才能执行证据要求。
+    public var text: String? {
+        let parts = [contextText, domText]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }
 }
 
@@ -38,10 +52,19 @@ public struct ConditionPreparationRequest: Equatable, Sendable {
 public struct PreparedCondition: Equatable, Sendable {
     public let confirmedSummary: String
     public let requiredEvidence: EvidenceRequirement
+    public let currentDecision: ConditionDecision
+    public let confidence: Double
 
-    public init(confirmedSummary: String, requiredEvidence: EvidenceRequirement) {
+    public init(
+        confirmedSummary: String,
+        requiredEvidence: EvidenceRequirement,
+        currentDecision: ConditionDecision,
+        confidence: Double
+    ) {
         self.confirmedSummary = confirmedSummary
         self.requiredEvidence = requiredEvidence
+        self.currentDecision = currentDecision
+        self.confidence = confidence
     }
 }
 

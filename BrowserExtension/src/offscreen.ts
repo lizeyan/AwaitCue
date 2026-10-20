@@ -23,6 +23,9 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
   if (message.type === "awaitcue.capture.stop" && typeof message.hookID === "string") {
     stopCapture(message.hookID);
     sendResponse({ ok: true });
+  } else if (message.type === "awaitcue.capture.stopAll") {
+    for (const hookID of [...captures.keys()]) stopCapture(hookID);
+    sendResponse({ ok: true });
   }
   return false;
 });
@@ -66,23 +69,10 @@ function stopCapture(hookID: string): void {
 function sampleFrame(request: CaptureStart, video: HTMLVideoElement): void {
   if (video.videoWidth <= 0 || video.videoHeight <= 0) return;
   const region = denormalizeRegion(request.region, video.videoWidth, video.videoHeight);
-  const canvas = document.createElement("canvas");
-  canvas.width = region.width;
-  canvas.height = region.height;
-  const context = canvas.getContext("2d", { alpha: false });
-  if (!context) return;
-  context.drawImage(
-    video,
-    region.x,
-    region.y,
-    region.width,
-    region.height,
-    0,
-    0,
-    region.width,
-    region.height
-  );
-  const imageDataURL = canvas.toDataURL("image/jpeg", 0.72);
+  let imageDataURL = renderFrame(video, region, 1_024, 0.62);
+  // Chromium→native 虽允许更大消息，但本地 relay 将图片约束在 1 MiB 内，避免单帧挤占全部 Hook 内存。
+  if (imageDataURL.length > 900_000) imageDataURL = renderFrame(video, region, 640, 0.5);
+  if (imageDataURL.length > 1_000_000) return;
   const nextFingerprint = fingerprint(imageDataURL);
   const active = captures.get(request.hookID);
   if (!active || active.lastFingerprint === nextFingerprint) return;
@@ -93,6 +83,34 @@ function sampleFrame(request: CaptureStart, video: HTMLVideoElement): void {
     imageDataURL,
     fingerprint: nextFingerprint
   });
+}
+
+function renderFrame(
+  video: HTMLVideoElement,
+  region: ReturnType<typeof denormalizeRegion>,
+  maximumDimension: number,
+  quality: number
+): string {
+  const scale = Math.min(1, maximumDimension / Math.max(region.width, region.height));
+  const outputWidth = Math.max(1, Math.round(region.width * scale));
+  const outputHeight = Math.max(1, Math.round(region.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = outputWidth;
+  canvas.height = outputHeight;
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) return "";
+  context.drawImage(
+    video,
+    region.x,
+    region.y,
+    region.width,
+    region.height,
+    0,
+    0,
+    outputWidth,
+    outputHeight
+  );
+  return canvas.toDataURL("image/jpeg", quality);
 }
 
 function isCaptureStart(value: unknown): value is CaptureStart {

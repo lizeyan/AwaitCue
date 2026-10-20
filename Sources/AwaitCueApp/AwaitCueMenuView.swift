@@ -18,6 +18,14 @@ struct AwaitCueMenuView: View {
             footer
         }
         .padding(14)
+        .sheet(
+            isPresented: Binding(
+                get: { model.pendingTarget != nil },
+                set: { if !$0 { model.dismissPendingTarget() } }
+            )
+        ) {
+            HookCreationView(model: model)
+        }
     }
 
     private var header: some View {
@@ -91,9 +99,10 @@ struct AwaitCueMenuView: View {
 
     private var footer: some View {
         HStack {
-            Button("新建 Hook…") {}
-                .disabled(true)
-                .help("全局矩形框选将在 ScreenCaptureKit smoke test 通过后启用。")
+            Button(model.isSelectingTarget ? "正在框选…" : "新建 Hook…") {
+                Task { await model.beginNewHookSelection() }
+            }
+            .disabled(model.isSelectingTarget)
             Spacer()
             Button("设置…") { model.openSettings() }
             Button("退出") { model.quit() }
@@ -106,6 +115,7 @@ struct AwaitCueMenuView: View {
         case .observing: "观察中"
         case .waitingMinimum: "等待最短时间"
         case .waitingInterruptible: "等待合适时机"
+        case .deliveringNotification: "正在通知"
         case .notified: "已通知"
         case .targetUnavailable: "目标不可用"
         case .completed: "已完成"
