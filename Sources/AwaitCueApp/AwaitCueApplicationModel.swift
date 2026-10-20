@@ -54,8 +54,8 @@ final class AwaitCueApplicationModel: ObservableObject {
     private var runtimeLoopTask: Task<Void, Never>?
     private var runtime: HookRuntime?
     private var globalHotKeyController: GlobalHotKeyController?
-    private var sessionActivityTask: Task<Void, Never>?
-    private var applicationActivationTask: Task<Void, Never>?
+    private var sessionActivityObserver: NSObjectProtocol?
+    private var applicationActivationObserver: NSObjectProtocol?
     private var notificationActionTask: Task<Void, Never>?
 
     init() {
@@ -406,8 +406,7 @@ final class AwaitCueApplicationModel: ObservableObject {
         browserEvidenceTask?.cancel()
         browserTargetTask?.cancel()
         runtimeLoopTask?.cancel()
-        sessionActivityTask?.cancel()
-        applicationActivationTask?.cancel()
+        stopWorkspaceEventMonitoring()
         notificationActionTask?.cancel()
         Task { [browserSelectionRelay, bridgeServer] in
             await runtime?.stop()
@@ -616,26 +615,41 @@ final class AwaitCueApplicationModel: ObservableObject {
     }
 
     private func startWorkspaceEventMonitoring() {
-        sessionActivityTask?.cancel()
-        applicationActivationTask?.cancel()
+        stopWorkspaceEventMonitoring()
         let notifications = NSWorkspace.shared.notificationCenter
-        sessionActivityTask = Task { [weak self] in
-            for await _ in notifications.notifications(
-                named: NSWorkspace.sessionDidBecomeActiveNotification
-            ) {
-                guard let self, let runtime else { continue }
+        sessionActivityObserver = notifications.addObserver(
+            forName: NSWorkspace.sessionDidBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let runtime else { return }
                 try? await runtime.userSessionBecameActive()
                 await reloadHooks()
             }
         }
-        applicationActivationTask = Task { [weak self] in
-            for await _ in notifications.notifications(
-                named: NSWorkspace.didActivateApplicationNotification
-            ) {
-                guard let self, let runtime else { continue }
+        applicationActivationObserver = notifications.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let runtime else { return }
                 try? await runtime.evaluateInterruptibility()
                 await reloadHooks()
             }
+        }
+    }
+
+    private func stopWorkspaceEventMonitoring() {
+        let notifications = NSWorkspace.shared.notificationCenter
+        if let sessionActivityObserver {
+            notifications.removeObserver(sessionActivityObserver)
+            self.sessionActivityObserver = nil
+        }
+        if let applicationActivationObserver {
+            notifications.removeObserver(applicationActivationObserver)
+            self.applicationActivationObserver = nil
         }
     }
 
