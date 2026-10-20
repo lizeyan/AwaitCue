@@ -1,0 +1,29 @@
+{
+  "name": "@awaitcue/chromium-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.38.0",
+    "@types/chrome": "^0.1.31",
+    "@types/node": "^24.9.1",
+    "@vitest/coverage-v8": "^4.0.3",
+    "eslint": "^9.38.0",
+    "esbuild": "^0.25.11",
+    "globals": "^16.4.0",
+    "jsdom": "^27.0.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.2",
+    "vitest": "^4.0.3"
+  }
+}

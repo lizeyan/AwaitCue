@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "AwaitCue for Chromium",
+  "version": "0.1.0",
+  "description": "Bind AwaitCue Hooks to a specific Chromium tab and selected region.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "activeTab",
+    "nativeMessaging",
+    "offscreen",
+    "scripting",
+    "storage",
+    "tabCapture",
+    "tabs"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Bind current tab to AwaitCue"
+  }
+}

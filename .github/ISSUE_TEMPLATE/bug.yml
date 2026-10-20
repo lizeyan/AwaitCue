@@ -1,0 +1,58 @@
+name: Bug report
+description: Report reproducible incorrect behavior without including sensitive screen content.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never attach real API keys, private screenshots, DOM content, credentials, or complete model payloads.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected outcome
+      description: What behavior did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual outcome
+      description: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Use a non-sensitive example whenever possible.
+      placeholder: |
+        1. Create a Hook on ...
+        2. Change the target to ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      description: Leave blank when the target is not a browser.
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target type
+      options:
+        - macOS window
+        - Chromium DOM
+        - Chromium tabCapture
+        - Model connection
+        - Notification
+        - Other
+    validations:
+      required: true
