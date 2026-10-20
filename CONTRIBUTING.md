@@ -35,3 +35,7 @@ feat(core): add stable condition confirmation
 test(model): cover incomplete Responses output
 ci: enforce extension coverage gate
 ```
+
+## License
+
+By submitting a contribution, you agree that it may be distributed under the repository's Apache License 2.0 unless you explicitly mark it as not being a contribution.

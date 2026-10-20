@@ -14,7 +14,7 @@ if git grep -nEI '(Authorization:[[:space:]]*Bearer[[:space:]]+[A-Za-z0-9._-]{16
   exit 1
 fi
 
-for required in README.md CONTRIBUTING.md SECURITY.md CONTEXT.md Package.swift BrowserExtension/package.json; do
+for required in LICENSE NOTICE README.md CONTRIBUTING.md SECURITY.md CONTEXT.md Package.swift BrowserExtension/package.json; do
   if [[ ! -e "${required}" ]]; then
     echo "Required repository file is missing: ${required}" >&2
     exit 1

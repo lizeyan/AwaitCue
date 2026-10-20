@@ -111,4 +111,4 @@ AwaitCue（候场）是一个开源 macOS 菜单栏应用。你可以在应用�
 
 ## License
 
-The open-source license will be finalized before the first merge. Apache-2.0 is the current recommendation; see the open project discussion before contributing copyrighted code.
+AwaitCue is licensed under the [Apache License 2.0](LICENSE). Contributions submitted to this repository are accepted under the same license unless explicitly stated otherwise.
