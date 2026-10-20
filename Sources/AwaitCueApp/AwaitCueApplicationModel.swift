@@ -623,9 +623,9 @@ final class AwaitCueApplicationModel: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, let runtime else { return }
+                guard let self, let runtime = self.runtime else { return }
                 try? await runtime.userSessionBecameActive()
-                await reloadHooks()
+                await self.reloadHooks()
             }
         }
         applicationActivationObserver = notifications.addObserver(
@@ -634,9 +634,9 @@ final class AwaitCueApplicationModel: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, let runtime else { return }
+                guard let self, let runtime = self.runtime else { return }
                 try? await runtime.evaluateInterruptibility()
-                await reloadHooks()
+                await self.reloadHooks()
             }
         }
     }
