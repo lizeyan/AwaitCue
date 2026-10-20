@@ -12,12 +12,25 @@ struct AwaitCueNativeHostMain {
             let client = NativeBridgeClient(descriptor: descriptor)
             try await client.connect()
 
-            async let input: Void = forwardStandardInput(
-                to: client,
-                browserBundleIdentifier: browserBundleIdentifier
-            )
-            async let output: Void = forwardAppMessages(from: client)
-            _ = try await (input, output)
+            // FileHandle stdin 读取不能可靠响应 Swift Task 取消；任一方向结束时直接终止专用 host 进程，
+            // 才能保证菜单栏 relay 关闭后 Chromium 立即收到 native port disconnect 并清理 capture。
+            Task {
+                do {
+                    try await forwardStandardInput(
+                        to: client,
+                        browserBundleIdentifier: browserBundleIdentifier
+                    )
+                    client.stop()
+                    Foundation.exit(EXIT_SUCCESS)
+                } catch {
+                    client.stop()
+                    writeErrorFrame(code: "native_bridge_input_failed")
+                    Foundation.exit(EXIT_FAILURE)
+                }
+            }
+            try await forwardAppMessages(from: client)
+            client.stop()
+            Foundation.exit(EXIT_SUCCESS)
         } catch {
             writeErrorFrame(code: "native_app_unavailable")
             Foundation.exit(EXIT_FAILURE)
