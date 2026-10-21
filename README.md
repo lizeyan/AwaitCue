@@ -94,7 +94,7 @@ Arc support is experimental. AwaitCue safely rejects selections when a visible A
 
 The protected `master` branch requires every PR check to pass. Testable Swift library seams and TypeScript business modules are each required to remain at or above 90% coverage. Thin AppKit/TCC, native-host stdio, and Chrome API entrypoints are excluded from automated coverage and must pass build plus real-environment smoke validation.
 
-The global Hook shortcut is `Command-Shift-Space`. It freezes every display in memory, enforces a single-window selection, and then opens the Condition/Delay creation sheet.
+The default global Hook shortcut is `Control-Shift-Space` (`⌃⇧Space`). It avoids 1Password's common `Command-Shift-Space` shortcut and can be changed to another preset in AwaitCue settings. It freezes every display in memory, enforces a single-window selection, and then opens the Condition/Delay creation sheet.
 
 ## Branch policy
 

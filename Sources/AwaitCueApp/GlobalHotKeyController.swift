@@ -1,4 +1,5 @@
 import Carbon.HIToolbox
+import AwaitCueCore
 import Foundation
 
 /// 使用 Carbon 注册不依赖 Accessibility 权限的系统级快捷键。
@@ -8,8 +9,11 @@ final class GlobalHotKeyController {
     private var hotKey: EventHotKeyRef?
     private let action: @MainActor () -> Void
 
-    /// 默认注册 Command-Shift-Space；系统只把按下事件交给 AwaitCue，不记录其他键盘输入。
-    init(action: @escaping @MainActor () -> Void) throws {
+    /// 注册用户选择的 Space 组合键；系统只把按下事件交给 AwaitCue，不记录其他键盘输入。
+    init(
+        preset: GlobalShortcutPreset,
+        action: @escaping @MainActor () -> Void
+    ) throws {
         self.action = action
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -38,7 +42,7 @@ final class GlobalHotKeyController {
         let identifier = EventHotKeyID(signature: Self.signature, id: 1)
         let registerStatus = RegisterEventHotKey(
             UInt32(kVK_Space),
-            UInt32(cmdKey | shiftKey),
+            preset.carbonModifiers,
             identifier,
             GetApplicationEventTarget(),
             0,
@@ -61,6 +65,16 @@ final class GlobalHotKeyController {
     private static let signature: OSType = {
         Array("AWCQ".utf8).reduce(0) { ($0 << 8) | OSType($1) }
     }()
+}
+
+private extension GlobalShortcutPreset {
+    var carbonModifiers: UInt32 {
+        switch self {
+        case .controlShiftSpace: UInt32(controlKey | shiftKey)
+        case .optionShiftSpace: UInt32(optionKey | shiftKey)
+        case .commandShiftSpace: UInt32(cmdKey | shiftKey)
+        }
+    }
 }
 
 enum GlobalHotKeyError: Error {
