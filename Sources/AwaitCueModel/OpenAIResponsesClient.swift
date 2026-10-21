@@ -61,7 +61,8 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
             inputText: inputText,
             image: request.evidence?.image,
             schema: schema,
-            reasoningEffort: "low"
+            reasoningEffort: "low",
+            maxOutputTokens: 160
         )
         let data = try await send(body)
         let output: PreparationOutput = try decodeStructuredOutput(from: data)
@@ -120,7 +121,8 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
             inputText: "当前活动文字：\(request.evidence.text ?? "（没有文字证据）")",
             image: request.evidence.image,
             schema: schema,
-            reasoningEffort: "none"
+            reasoningEffort: "none",
+            maxOutputTokens: 64
         )
         let data = try await send(body)
         let output: InterruptibilityOutput = try decodeStructuredOutput(from: data)
@@ -162,7 +164,8 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
             inputText: conditionInputText(for: request),
             image: request.evidence.image,
             schema: schema,
-            reasoningEffort: "none"
+            reasoningEffort: "none",
+            maxOutputTokens: 64
         )
     }
 
@@ -172,7 +175,8 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
         inputText: String,
         image: ModelImage?,
         schema: [String: Any],
-        reasoningEffort: String
+        reasoningEffort: String,
+        maxOutputTokens: Int
     ) throws -> Data {
         var content: [[String: Any]] = [[
             "type": "input_text",
@@ -191,6 +195,7 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
         let body: [String: Any] = [
             "model": model,
             "store": false,
+            "max_output_tokens": maxOutputTokens,
             "instructions": instructions,
             "reasoning": ["effort": reasoningEffort],
             "input": [["role": "user", "content": content]],

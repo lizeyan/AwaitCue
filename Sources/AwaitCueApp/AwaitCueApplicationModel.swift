@@ -755,10 +755,11 @@ final class AwaitCueApplicationModel: ObservableObject {
         image: CGImage,
         browserDOMText: String?
     ) throws -> ModelEvidence {
-        let bitmap = NSBitmapImageRep(cgImage: image)
+        let resizedImage = try resizedPreviewImage(image, maximumDimension: 1_024)
+        let bitmap = NSBitmapImageRep(cgImage: resizedImage)
         guard let jpeg = bitmap.representation(
             using: .jpeg,
-            properties: [.compressionFactor: 0.72]
+            properties: [.compressionFactor: 0.62]
         ) else {
             throw OpenAIResponsesClientError.invalidRequest
         }
@@ -773,6 +774,39 @@ final class AwaitCueApplicationModel: ObservableObject {
             domText: browserDOMText,
             image: ModelImage(data: jpeg, mediaType: "image/jpeg")
         )
+    }
+
+    /// 创建前截图只需支持快速决策；限制长边可以显著减少视觉 tokens 和服务端预处理时间。
+    private static func resizedPreviewImage(
+        _ image: CGImage,
+        maximumDimension: Int
+    ) throws -> CGImage {
+        let sourceMaximum = max(image.width, image.height)
+        guard sourceMaximum > maximumDimension else { return image }
+        let scale = Double(maximumDimension) / Double(sourceMaximum)
+        let width = max(1, Int((Double(image.width) * scale).rounded()))
+        let height = max(1, Int((Double(image.height) * scale).rounded()))
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(
+            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
+        )
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            throw OpenAIResponsesClientError.invalidRequest
+        }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let resized = context.makeImage() else {
+            throw OpenAIResponsesClientError.invalidRequest
+        }
+        return resized
     }
 
     private static func userFacingMessage(for error: Error) -> String {
