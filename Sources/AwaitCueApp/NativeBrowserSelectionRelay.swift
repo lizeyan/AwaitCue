@@ -66,7 +66,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         listenTask?.cancel()
         listenTask = nil
         for selection in pending.values {
-            selection.continuation.resume(returning: .unavailable)
+            selection.continuation.resume(returning: .unavailable(.noExtensionResponse))
         }
         pending.removeAll()
         for hostQuery in pendingActiveHosts.values {
@@ -164,7 +164,10 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
                 do {
                     try await server.broadcastPayload(payload)
                 } catch {
-                    await self?.finish(requestID: requestID, with: .unavailable)
+                    await self?.finish(
+                        requestID: requestID,
+                        with: .unavailable(.noExtensionResponse)
+                    )
                     return
                 }
                 try? await Task.sleep(for: .seconds(2))
@@ -312,11 +315,24 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
 
     private func handleSelectionResponse(_ object: [String: Any]) {
         guard let requestID = object["requestID"] as? String,
-              object["matched"] as? Bool == true,
               var pendingSelection = pending[requestID],
               let browserBundleIdentifier = object["browserBundleIdentifier"] as? String,
-              browserBundleIdentifier == pendingSelection.browserBundleIdentifier,
-              let target = object["target"] as? [String: Any],
+              browserBundleIdentifier == pendingSelection.browserBundleIdentifier
+        else {
+            return
+        }
+        guard object["matched"] as? Bool == true else {
+            let reason = (object["reason"] as? String)
+                .flatMap(BrowserSelectionFailureReason.init(rawValue:))
+                ?? .invalidPageResponse
+            pendingSelection.collector.recordFailure(
+                browserBundleIdentifier: browserBundleIdentifier,
+                reason: reason
+            )
+            pending[requestID] = pendingSelection
+            return
+        }
+        guard let target = object["target"] as? [String: Any],
               let extensionID = target["extensionInstallationID"] as? String,
               let tabID = target["tabID"] as? Int,
               let host = target["host"] as? String,
@@ -326,6 +342,11 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
               let regionObject = target["region"] as? [String: Any],
               let region = Self.region(from: regionObject)
         else {
+            pendingSelection.collector.recordFailure(
+                browserBundleIdentifier: browserBundleIdentifier,
+                reason: .invalidPageResponse
+            )
+            pending[requestID] = pendingSelection
             return
         }
         let browserTarget = BrowserTarget(

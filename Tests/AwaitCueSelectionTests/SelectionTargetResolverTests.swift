@@ -41,7 +41,25 @@ struct SelectionTargetResolverTests {
             browserBundleIdentifier: "com.google.Chrome",
             target: secondChromeTarget
         )
-        #expect(collector.resolution == .unavailable)
+        #expect(collector.resolution == .unavailable(.ambiguousResponse))
+    }
+
+    @Test("浏览器选择失败优先返回最具体原因且无响应可区分")
+    func browserSelectionPreservesFailureReason() {
+        var collector = BrowserSelectionMatchCollector(
+            browserBundleIdentifier: "com.google.Chrome"
+        )
+        #expect(collector.resolution == .unavailable(.noExtensionResponse))
+
+        collector.recordFailure(
+            browserBundleIdentifier: "com.google.Chrome",
+            reason: .windowNotMatched
+        )
+        collector.recordFailure(
+            browserBundleIdentifier: "com.google.Chrome",
+            reason: .selectionOutsideViewport
+        )
+        #expect(collector.resolution == .unavailable(.selectionOutsideViewport))
     }
 
     @Test("活动浏览器 host 只接受同 bundle 的唯一 installation")
@@ -157,10 +175,12 @@ struct SelectionTargetResolverTests {
 
     @Test("浏览器 relay 不可用时禁止降级成窗口 Target")
     func unavailableBrowserRelayDoesNotFallBackToWindowTarget() async {
-        let relay = FixtureBrowserSelectionRelay(result: .unavailable)
+        let relay = FixtureBrowserSelectionRelay(result: .unavailable(.selectionOutsideViewport))
         let resolver = fixtureTargetResolver(relay: relay)
 
-        await #expect(throws: SelectionTargetError.browserRelayUnavailable) {
+        await #expect(
+            throws: SelectionTargetError.browserRelayUnavailable(.selectionOutsideViewport)
+        ) {
             try await resolver.resolve(
                 appKitSelectionRect: CGRect(x: 120, y: 570, width: 100, height: 80),
                 appKitAnchor: CGPoint(x: 130, y: 640),

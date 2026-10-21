@@ -741,6 +741,24 @@ final class AwaitCueApplicationModel: ObservableObject {
     }
 
     private static func userFacingMessage(for error: Error) -> String {
+        if case let SelectionTargetError.browserRelayUnavailable(reason) = error {
+            return switch reason {
+            case .windowNotMatched:
+                "当前浏览器窗口没有匹配的 AwaitCue 扩展连接。若使用了其他 Chrome 个人资料，请确认该资料也启用了扩展。"
+            case .activeTabUnavailable:
+                "当前标签页不是可观察的普通网页。"
+            case .selectionOutsideViewport:
+                "框选必须完全位于网页内容区域内，不能包含标签栏、地址栏、书签栏或浏览器侧栏。"
+            case .pageAccessUnavailable:
+                "AwaitCue 无法读取当前页面，请检查扩展的站点访问权限。"
+            case .invalidPageResponse:
+                "浏览器扩展返回了无效的页面信息，请刷新页面后重试。"
+            case .noExtensionResponse:
+                "当前浏览器没有响应，请确认 AwaitCue 扩展已在这个浏览器个人资料中启用。"
+            case .ambiguousResponse:
+                "检测到多个浏览器窗口或扩展实例，无法唯一绑定目标。"
+            }
+        }
         if let clientError = error as? OpenAIResponsesClientError {
             return switch clientError {
             case .invalidConfiguration: "模型地址、API key 或模型名称无效。"

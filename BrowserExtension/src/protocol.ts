@@ -35,6 +35,13 @@ export type FocusTargetCommand = Readonly<{
 
 export type ScreenRect = Readonly<{ x: number; y: number; width: number; height: number }>;
 
+export type SelectionFailureReason =
+  | "window_not_matched"
+  | "active_tab_unavailable"
+  | "selection_outside_viewport"
+  | "page_access_unavailable"
+  | "invalid_page_response";
+
 export type ResolveSelectionCommand = Readonly<{
   type: "resolveSelection";
   requestID: string;
@@ -91,8 +98,8 @@ export type ExtensionEvent =
   | Readonly<{
       type: "selectionResolved";
       requestID: string;
-      matched: boolean;
-      target?: Readonly<{
+      matched: true;
+      target: Readonly<{
         extensionInstallationID: string;
         tabID: number;
         host: string;
@@ -100,6 +107,12 @@ export type ExtensionEvent =
         title: string;
         region: NormalizedRegion;
       }>;
+    }>
+  | Readonly<{
+      type: "selectionResolved";
+      requestID: string;
+      matched: false;
+      reason: SelectionFailureReason;
     }>
   | Readonly<{ type: "error"; hookID?: string; code: string; message: string }>;
 
