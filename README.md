@@ -80,6 +80,8 @@ npm --prefix BrowserExtension ci
 npm --prefix BrowserExtension run coverage
 ```
 
+`Scripts/package-release.sh` gives local ad-hoc builds a stable identifier-based designated requirement so macOS TCC permissions survive rebuilds. If you previously authorized a hash-based development build, remove its old Screen Recording entry and add the newly packaged app once.
+
 Install the native host manifest for an unpacked Chromium extension:
 
 ```bash
