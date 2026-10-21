@@ -214,7 +214,7 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
         else {
             throw OpenAIResponsesClientError.invalidConfiguration
         }
-        var request = URLRequest(url: baseURL.appendingPathComponent("responses"))
+        var request = URLRequest(url: responsesEndpointURL)
         request.httpMethod = "POST"
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -242,6 +242,14 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
         if scheme == "https" { return true }
         guard scheme == "http" else { return false }
         return host == "localhost" || host == "127.0.0.1" || host == "::1"
+    }
+
+    /// 用户可能拿到的是服务 base URL，也可能是文档给出的完整 endpoint；两种输入都只请求一次 /responses。
+    private var responsesEndpointURL: URL {
+        if baseURL.lastPathComponent == "responses" {
+            return baseURL
+        }
+        return baseURL.appendingPathComponent("responses")
     }
 
     private func decodeStructuredOutput<Output: Decodable>(

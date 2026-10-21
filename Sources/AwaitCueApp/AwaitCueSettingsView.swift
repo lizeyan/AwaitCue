@@ -21,6 +21,9 @@ struct AwaitCueSettingsView: View {
                 .onChange(of: model.modelBaseURL) { _, _ in
                     model.confirmedAPIHostname = false
                 }
+            Text("可填写服务 Base URL，也可直接填写完整的 /responses 地址。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             SecureField("API key", text: $model.apiKey)
             TextField("模型", text: $model.modelName)
 

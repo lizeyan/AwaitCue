@@ -111,6 +111,32 @@ struct OpenAIResponsesClientTests {
         #expect(Set(schema["required"] as? [String] ?? []) == ["decision", "confidence"])
     }
 
+    @Test("完整 Responses endpoint 不会重复追加路径")
+    func acceptsCompleteResponsesEndpoint() async throws {
+        let recorder = RequestRecorder()
+        let session = makeStubbedSession { request in
+            recorder.record(request)
+            return try stubbedResponse(
+                for: request,
+                statusCode: 200,
+                body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"decision\":\"notMatched\",\"confidence\":0.8}"}]}]}"#
+            )
+        }
+        let endpoint = URL(
+            string: "https://model.example/gpt/openapi/online/responses"
+        )!
+        let client = OpenAIResponsesClient(
+            baseURL: endpoint,
+            apiKey: "test-key",
+            model: "vision-model",
+            session: session
+        )
+
+        _ = try await client.evaluateCondition(fixtureConditionRequest())
+
+        #expect(recorder.request?.url == endpoint)
+    }
+
     @Test("是否适合打断使用独立三态判断契约")
     func evaluatesInterruptibility() async throws {
         let recorder = RequestRecorder()
