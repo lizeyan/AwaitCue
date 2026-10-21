@@ -61,7 +61,7 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
             inputText: inputText,
             image: request.evidence?.image,
             schema: schema,
-            reasoningEffort: "low",
+            reasoningEffort: "none",
             maxOutputTokens: 160
         )
         let data = try await send(body)
@@ -266,6 +266,11 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
         } catch {
             throw OpenAIResponsesClientError.invalidResponse
         }
+        if envelope.status == "incomplete" {
+            throw OpenAIResponsesClientError.incompleteResponse(
+                envelope.incompleteDetails?.reason
+            )
+        }
         let content = envelope.output.flatMap { $0.content ?? [] }
         guard let text = content
             .first(where: { $0.type == "output_text" })?
@@ -317,7 +322,19 @@ public final class OpenAIResponsesClient: @unchecked Sendable {
 }
 
 private struct ResponsesEnvelope: Decodable {
+    let status: String?
+    let incompleteDetails: IncompleteDetails?
     let output: [Output]
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case incompleteDetails = "incomplete_details"
+        case output
+    }
+
+    struct IncompleteDetails: Decodable {
+        let reason: String?
+    }
 
     struct Output: Decodable {
         let content: [Content]?

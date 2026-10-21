@@ -38,6 +38,7 @@ struct HookCreationView: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
+                conditionAnalysisStatus
                 conditionPreview
             } else {
                 Picker("最短等待", selection: $minimumDelay) {
@@ -130,6 +131,20 @@ struct HookCreationView: View {
             )
         case .delay:
             _ = await model.createDelayHook(title: title, minimumDelay: minimumDelay)
+        }
+    }
+
+    @ViewBuilder
+    private var conditionAnalysisStatus: some View {
+        if model.isPreparingCondition {
+            Label("正在分析框选截图和当前内容…", systemImage: "sparkles")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if let error = model.conditionPreparationError {
+            Label("分析失败：\(error)", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

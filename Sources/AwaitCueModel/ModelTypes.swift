@@ -118,4 +118,5 @@ public enum OpenAIResponsesClientError: Error, Equatable, Sendable {
     case httpStatus(Int)
     case invalidResponse
     case invalidStructuredOutput
+    case incompleteResponse(String?)
 }

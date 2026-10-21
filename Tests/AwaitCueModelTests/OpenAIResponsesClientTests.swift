@@ -42,7 +42,7 @@ struct OpenAIResponsesClientTests {
         let body = try #require(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
         #expect(body["max_output_tokens"] as? Int == 160)
         let reasoning = try #require(body["reasoning"] as? [String: Any])
-        #expect(reasoning["effort"] as? String == "low")
+        #expect(reasoning["effort"] as? String == "none")
         let text = try #require(body["text"] as? [String: Any])
         let format = try #require(text["format"] as? [String: Any])
         #expect(format["name"] as? String == "condition_preparation")
@@ -393,6 +393,33 @@ struct OpenAIResponsesClientTests {
 
         await #expect(throws: OpenAIResponsesClientError.invalidResponse) {
             try await client.evaluateCondition(fixtureConditionRequest())
+        }
+    }
+
+    @Test("输出预算耗尽时保留 Responses incomplete 原因")
+    func reportsIncompleteResponseReason() async {
+        let client = OpenAIResponsesClient(
+            baseURL: URL(string: "https://model.example/v1")!,
+            apiKey: "test-key",
+            model: "vision-model",
+            session: makeStubbedSession { request in
+                try stubbedResponse(
+                    for: request,
+                    statusCode: 200,
+                    body: #"{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[],"usage":{"input_tokens":100,"output_tokens":160,"total_tokens":260}}"#
+                )
+            }
+        )
+
+        await #expect(
+            throws: OpenAIResponsesClientError.incompleteResponse("max_output_tokens")
+        ) {
+            try await client.prepareCondition(
+                ConditionPreparationRequest(
+                    originalText: "模型工作完成后提醒",
+                    evidence: ModelEvidence(text: "模型正在等待用户输入")
+                )
+            )
         }
     }
 
