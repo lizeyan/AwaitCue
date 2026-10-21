@@ -150,10 +150,8 @@ struct HookCreationView: View {
                         Text("当前已经满足。创建后仍会执行第二次稳定确认，不会立即通知。")
                             .font(.caption)
                             .foregroundStyle(.orange)
-                    } else if preview.currentDecision == .uncertain,
-                              case .browser = model.pendingTarget
-                    {
-                        Text("浏览器 DOM 或截图会在创建后开始读取；届时再判断当前状态。")
+                    } else if preview.currentDecision == .uncertain {
+                        Text("当前框选内容不足以可靠判断；可以调整条件，或重新框选更明确的区域。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

@@ -26,7 +26,20 @@ public enum GlobalSelectionControllerError: Error, Equatable, Sendable {
     case noFrozenDisplays
     case windowOrderUnavailable
     case windowChangedDuringSelection
+    case previewUnavailable
     case cancelled
+}
+
+/// 一次框选生成的稳定 Target 和仅包含所选区域的冻结预览图。
+public struct GlobalSelectionResult: Sendable {
+    public let target: HookTarget
+    public let previewImage: CGImage
+
+    /// 保存最终 Target 和已经脱离完整屏幕像素存储的区域预览。
+    public init(target: HookTarget, previewImage: CGImage) {
+        self.target = target
+        self.previewImage = previewImage
+    }
 }
 
 /// 冻结桌面、展示 AppKit overlay，并将手势解析为最终 HookTarget。
@@ -77,6 +90,16 @@ public final class GlobalSelectionController {
 
     /// 开始一次全局框选，并在普通窗口或 browser relay 之间生成唯一 Target。
     public func beginSelection() async throws -> HookTarget {
+        try await performSelection().target
+    }
+
+    /// 开始一次全局框选，并保留创建前模型分析所需的精确区域截图。
+    public func beginSelectionWithPreview() async throws -> GlobalSelectionResult {
+        try await performSelection()
+    }
+
+    /// 统一执行冻结、框选、Target 解析和预览裁剪，避免两个公开入口产生不同验证顺序。
+    private func performSelection() async throws -> GlobalSelectionResult {
         guard !isSelecting else {
             throw GlobalSelectionControllerError.selectionAlreadyActive
         }
@@ -122,7 +145,13 @@ public final class GlobalSelectionController {
         guard Self.target(target, frozenWindows: orderedWindows, stillMatches: currentWindows) else {
             throw GlobalSelectionControllerError.windowChangedDuringSelection
         }
-        return target
+        return GlobalSelectionResult(
+            target: target,
+            previewImage: try Self.previewImage(
+                for: interaction.selectionRect,
+                in: frames
+            )
+        )
     }
 
     /// 取消当前手势并立即关闭所有 overlay 窗口。
@@ -170,5 +199,68 @@ public final class GlobalSelectionController {
             && abs(frozenWindow.frame.minY - currentWindow.frame.minY) < 1
             && abs(frozenWindow.frame.width - currentWindow.frame.width) < 1
             && abs(frozenWindow.frame.height - currentWindow.frame.height) < 1
+    }
+
+    /// 将 AppKit 左下原点的框选换算为冻结帧左上原点的像素矩形，并复制成独立图像。
+    private static func previewImage(
+        for selectionRect: CGRect,
+        in frames: [FrozenDisplayFrame]
+    ) throws -> CGImage {
+        guard let frame = frames.first(where: { $0.appKitFrame.contains(selectionRect) }) else {
+            // 跨显示器区域无法由单个冻结帧完整表达；不能用部分截图伪装成完整证据。
+            throw GlobalSelectionControllerError.previewUnavailable
+        }
+        let scaleX = CGFloat(frame.image.width) / frame.appKitFrame.width
+        let scaleY = CGFloat(frame.image.height) / frame.appKitFrame.height
+        let minX = floor((selectionRect.minX - frame.appKitFrame.minX) * scaleX)
+        let minY = floor((frame.appKitFrame.maxY - selectionRect.maxY) * scaleY)
+        let maxX = ceil((selectionRect.maxX - frame.appKitFrame.minX) * scaleX)
+        let maxY = ceil((frame.appKitFrame.maxY - selectionRect.minY) * scaleY)
+        let imageBounds = CGRect(
+            x: 0,
+            y: 0,
+            width: frame.image.width,
+            height: frame.image.height
+        )
+        let pixelRect = CGRect(
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY
+        ).intersection(imageBounds)
+        guard
+            !pixelRect.isNull,
+            pixelRect.width > 0,
+            pixelRect.height > 0,
+            let croppedView = frame.image.cropping(to: pixelRect)
+        else {
+            throw GlobalSelectionControllerError.previewUnavailable
+        }
+
+        // CGImage.cropping 可能继续持有完整屏幕像素；重绘后让未框选内容立即释放。
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(
+            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
+        )
+        guard let context = CGContext(
+            data: nil,
+            width: croppedView.width,
+            height: croppedView.height,
+            bitsPerComponent: 8,
+            bytesPerRow: croppedView.width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            throw GlobalSelectionControllerError.previewUnavailable
+        }
+        context.interpolationQuality = .none
+        context.draw(
+            croppedView,
+            in: CGRect(x: 0, y: 0, width: croppedView.width, height: croppedView.height)
+        )
+        guard let detachedImage = context.makeImage() else {
+            throw GlobalSelectionControllerError.previewUnavailable
+        }
+        return detachedImage
     }
 }

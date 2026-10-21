@@ -95,6 +95,47 @@ struct GlobalSelectionControllerTests {
     }
 
     @MainActor
+    @Test("创建前分析获得框选区域的冻结截图而不是完整屏幕")
+    func controllerReturnsSelectedPreviewImage() async throws {
+        let controller = GlobalSelectionController(
+            frozenFrameProvider: FixtureFrozenScreenFrameProvider(
+                frames: [
+                    FrozenDisplayFrame(
+                        displayIdentifier: 1,
+                        appKitFrame: CGRect(x: 0, y: 0, width: 100, height: 50),
+                        image: fixtureControllerImage(width: 200, height: 100)
+                    )
+                ]
+            ),
+            discoverWindows: {
+                [
+                    DiscoveredWindow(
+                        applicationBundleIdentifier: "com.example.editor",
+                        applicationName: "Editor",
+                        windowIdentifier: 82,
+                        title: "Document",
+                        frame: CGRect(x: 0, y: 0, width: 100, height: 50)
+                    )
+                ]
+            },
+            browserRelay: FixtureControllerBrowserRelay(),
+            overlayPresenter: FixtureGlobalSelectionOverlayPresenter(
+                interaction: GlobalSelectionInteraction(
+                    anchor: CGPoint(x: 25, y: 15),
+                    selectionRect: CGRect(x: 20, y: 10, width: 40, height: 20)
+                )
+            ),
+            windowZOrderProvider: FixtureWindowZOrderProvider(),
+            primaryDisplayFrame: { CGRect(x: 0, y: 0, width: 100, height: 50) }
+        )
+
+        let result = try await controller.beginSelectionWithPreview()
+
+        #expect(result.previewImage.width == 80)
+        #expect(result.previewImage.height == 40)
+    }
+
+    @MainActor
     @Test("缺少主显示器或冻结帧时返回稳定错误并清理 overlay")
     func controllerRejectsUnavailableDesktop() async {
         let presenter = ThrowingGlobalSelectionOverlayPresenter(error: GlobalSelectionControllerError.cancelled)
@@ -444,14 +485,14 @@ private actor SequencedWindowDiscovery {
     }
 }
 
-private func fixtureControllerImage() -> CGImage {
-    let data = Data(repeating: 0, count: 4)
+private func fixtureControllerImage(width: Int = 1, height: Int = 1) -> CGImage {
+    let data = Data(repeating: 0, count: width * height * 4)
     return CGImage(
-        width: 1,
-        height: 1,
+        width: width,
+        height: height,
         bitsPerComponent: 8,
         bitsPerPixel: 32,
-        bytesPerRow: 4,
+        bytesPerRow: width * 4,
         space: CGColorSpaceCreateDeviceRGB(),
         bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
         provider: CGDataProvider(data: data as CFData)!,
