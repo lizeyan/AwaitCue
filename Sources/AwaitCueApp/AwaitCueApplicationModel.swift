@@ -26,6 +26,8 @@ final class AwaitCueApplicationModel: ObservableObject {
     @Published var modelName: String
     @Published var apiKey: String = ""
     @Published var confirmedAPIHostname = false
+    @Published private(set) var globalShortcutPreset: GlobalShortcutPreset
+    @Published private(set) var globalShortcutError: String?
     @Published var excludedApplicationBundleIdentifiersText: String {
         didSet { persistPrivacyExclusionConfiguration() }
     }
@@ -66,6 +68,9 @@ final class AwaitCueApplicationModel: ObservableObject {
         modelName = defaults.string(forKey: "modelName") ?? "gpt-6-luna"
         confirmedAPIHostname = defaults.string(forKey: Self.confirmedAPIHostnameKey)
             == URL(string: storedModelBaseURL)?.host
+        globalShortcutPreset = defaults.string(forKey: Self.globalShortcutPresetKey)
+            .flatMap(GlobalShortcutPreset.init(rawValue:))
+            ?? .default
         let excludedBundleIdentifiers = defaults.string(
             forKey: Self.excludedApplicationBundleIdentifiersKey
         ) ?? ""
@@ -134,9 +139,7 @@ final class AwaitCueApplicationModel: ObservableObject {
             }
             try await restoreBrowserBindings()
             await configureRuntimeIfPossible()
-            globalHotKeyController = try GlobalHotKeyController { [weak self] in
-                Task { await self?.beginNewHookSelection() }
-            }
+            configureGlobalHotKey()
             startWorkspaceEventMonitoring()
             // 通知授权可能等待用户操作；不能让它阻塞 SQLite、relay、快捷键和观察 Runtime 启动。
             Task { [notificationClient] in
@@ -387,6 +390,7 @@ final class AwaitCueApplicationModel: ObservableObject {
             UserDefaults.standard.removeObject(forKey: "modelBaseURL")
             UserDefaults.standard.removeObject(forKey: "modelName")
             UserDefaults.standard.removeObject(forKey: Self.confirmedAPIHostnameKey)
+            resetGlobalShortcut()
             notificationClient.removeAllPendingNotifications()
             await runtime?.stop()
             runtimeLoopTask?.cancel()
@@ -400,6 +404,22 @@ final class AwaitCueApplicationModel: ObservableObject {
 
     func openSettings() {
         NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+
+    func updateGlobalShortcut(_ preset: GlobalShortcutPreset) {
+        guard preset != globalShortcutPreset else { return }
+        let previousPreset = globalShortcutPreset
+        globalHotKeyController?.stop()
+        globalHotKeyController = nil
+        do {
+            globalHotKeyController = try makeGlobalHotKeyController(for: preset)
+            globalShortcutPreset = preset
+            globalShortcutError = nil
+            UserDefaults.standard.set(preset.rawValue, forKey: Self.globalShortcutPresetKey)
+        } catch {
+            globalShortcutError = "无法注册 \(preset.displayName)，已恢复 \(previousPreset.displayName)。"
+            globalHotKeyController = try? makeGlobalHotKeyController(for: previousPreset)
+        }
     }
 
     func quit() {
@@ -617,6 +637,34 @@ final class AwaitCueApplicationModel: ObservableObject {
         hooks = (try? await coordinator?.restoreActiveHooks()) ?? []
     }
 
+    private func configureGlobalHotKey() {
+        globalHotKeyController?.stop()
+        do {
+            globalHotKeyController = try makeGlobalHotKeyController(
+                for: globalShortcutPreset
+            )
+            globalShortcutError = nil
+        } catch {
+            globalHotKeyController = nil
+            globalShortcutError = "无法注册 \(globalShortcutPreset.displayName)，请在设置中选择其他快捷键。"
+        }
+    }
+
+    private func makeGlobalHotKeyController(
+        for preset: GlobalShortcutPreset
+    ) throws -> GlobalHotKeyController {
+        try GlobalHotKeyController(preset: preset) { [weak self] in
+            Task { await self?.beginNewHookSelection() }
+        }
+    }
+
+    private func resetGlobalShortcut() {
+        globalHotKeyController?.stop()
+        globalShortcutPreset = .default
+        UserDefaults.standard.removeObject(forKey: Self.globalShortcutPresetKey)
+        configureGlobalHotKey()
+    }
+
     private func startWorkspaceEventMonitoring() {
         stopWorkspaceEventMonitoring()
         let notifications = NSWorkspace.shared.notificationCenter
@@ -698,4 +746,5 @@ final class AwaitCueApplicationModel: ObservableObject {
         "privacy.excludedApplicationBundleIdentifiers"
     private static let excludedBrowserHostsKey = "privacy.excludedBrowserHosts"
     private static let confirmedAPIHostnameKey = "model.confirmedAPIHostname"
+    private static let globalShortcutPresetKey = "globalShortcutPreset"
 }

@@ -1,3 +1,4 @@
+import AwaitCueCore
 import SwiftUI
 
 struct AwaitCueSettingsView: View {
@@ -70,8 +71,21 @@ struct AwaitCueSettingsView: View {
             LabeledContent("浏览器 relay") {
                 Text(model.browserBridgeStatus)
             }
-            LabeledContent("全局框选快捷键") {
-                Text("⌘⇧Space")
+            Picker(
+                "全局框选快捷键",
+                selection: Binding(
+                    get: { model.globalShortcutPreset },
+                    set: { model.updateGlobalShortcut($0) }
+                )
+            ) {
+                ForEach(GlobalShortcutPreset.allCases, id: \.self) { preset in
+                    Text(preset.displayName).tag(preset)
+                }
+            }
+            if let shortcutError = model.globalShortcutError {
+                Label(shortcutError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
             Section("当前活动隐私排除") {
                 TextField(
