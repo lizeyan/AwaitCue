@@ -40,6 +40,7 @@ final class AwaitCueApplicationModel: ObservableObject {
     @Published private(set) var screenCapturePermissionGranted = CGPreflightScreenCaptureAccess()
     @Published private(set) var conditionPreview: PreparedCondition?
     @Published private(set) var isPreparingCondition = false
+    @Published private(set) var conditionPreparationError: String?
 
     private var coordinator: HookCoordinator?
     private let notificationClient = SystemNotificationClient()
@@ -283,6 +284,7 @@ final class AwaitCueApplicationModel: ObservableObject {
     /// 让模型解释当前 Target 的 Condition，并返回当前判断供用户确认。
     func prepareCondition(_ conditionText: String) async {
         guard let target = pendingTarget else { return }
+        conditionPreparationError = nil
         isPreparingCondition = true
         defer { isPreparingCondition = false }
         do {
@@ -313,7 +315,7 @@ final class AwaitCueApplicationModel: ObservableObject {
             }
         } catch {
             conditionPreview = nil
-            startupError = Self.userFacingMessage(for: error)
+            conditionPreparationError = Self.userFacingMessage(for: error)
         }
     }
 
@@ -369,6 +371,7 @@ final class AwaitCueApplicationModel: ObservableObject {
 
     func clearConditionPreview() {
         conditionPreview = nil
+        conditionPreparationError = nil
     }
 
     private func finishPendingTarget() {
@@ -376,6 +379,7 @@ final class AwaitCueApplicationModel: ObservableObject {
             pendingTarget = nil
             pendingInitialEvidence = nil
             conditionPreview = nil
+            conditionPreparationError = nil
         }
     }
 
@@ -839,6 +843,10 @@ final class AwaitCueApplicationModel: ObservableObject {
             case let .httpStatus(status): "模型服务返回 HTTP \(status)。"
             case .invalidResponse: "模型服务没有返回有效的 Responses API 内容。"
             case .invalidStructuredOutput: "模型不支持所需的严格结构化输出。"
+            case let .incompleteResponse(reason):
+                reason == "max_output_tokens"
+                    ? "模型分析耗尽了输出预算，尚未产生判断。请重试或调整模型配置。"
+                    : "模型分析未完成\(reason.map { "：\($0)" } ?? "。")"
             }
         }
         return String(describing: error)
