@@ -3,10 +3,14 @@ import SwiftUI
 @main
 struct AwaitCueApp: App {
     @StateObject private var model: AwaitCueApplicationModel
+    @StateObject private var hookCreationWindowController: HookCreationWindowController
 
     init() {
         let model = AwaitCueApplicationModel()
+        let hookCreationWindowController = HookCreationWindowController(model: model)
+        model.attachHookCreationPresenter(hookCreationWindowController)
         _model = StateObject(wrappedValue: model)
+        _hookCreationWindowController = StateObject(wrappedValue: hookCreationWindowController)
         // MenuBarExtra 内容是懒加载的；进程级服务必须在 App 创建时启动，不能等待用户先打开菜单。
         Task { @MainActor in
             await model.start()
