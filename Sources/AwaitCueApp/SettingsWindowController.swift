@@ -19,16 +19,23 @@ final class SettingsWindowController: NSObject, ObservableObject, NSWindowDelega
         }
         guard let model else { return }
 
-        let hostingController = NSHostingController(rootView: AwaitCueSettingsView(model: model))
+        let hostingController = NSHostingController(
+            rootView: AwaitCueSettingsView(model: model)
+                .frame(minWidth: 720, minHeight: 520)
+        )
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "AwaitCue 设置"
         window.contentViewController = hostingController
+        // 设置 contentViewController 可能按 SwiftUI 固有尺寸收缩窗口；必须在挂载后重申默认大小。
+        window.setContentSize(NSSize(width: 760, height: 560))
+        window.contentMinSize = NSSize(width: 720, height: 520)
         window.isReleasedWhenClosed = false
+        window.isRestorable = false
         window.tabbingMode = .disallowed
         window.delegate = self
         window.center()

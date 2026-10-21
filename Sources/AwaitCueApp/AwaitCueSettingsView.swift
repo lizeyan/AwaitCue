@@ -2,52 +2,121 @@ import AwaitCueCore
 import SwiftUI
 
 struct AwaitCueSettingsView: View {
+    private enum SettingsSection: String, CaseIterable, Identifiable {
+        case model
+        case privacy
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .model: "模型"
+            case .privacy: "隐私"
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .model: "连接 OpenAI Responses API 兼容的图片模型。"
+            case .privacy: "管理本地截图权限、浏览器连接和排除规则。"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .model: "brain"
+            case .privacy: "hand.raised"
+            }
+        }
+    }
+
     @ObservedObject var model: AwaitCueApplicationModel
     @State private var showDeleteConfirmation = false
+    @State private var selectedSection: SettingsSection = .model
 
     var body: some View {
-        TabView {
-            modelSettings
-                .tabItem { Label("模型", systemImage: "brain") }
-            privacySettings
-                .tabItem { Label("隐私", systemImage: "hand.raised") }
+        HStack(spacing: 0) {
+            List(SettingsSection.allCases, selection: $selectedSection) { section in
+                Label(section.title, systemImage: section.systemImage)
+                    .tag(section)
+            }
+            .listStyle(.sidebar)
+            .frame(width: 170)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(selectedSection.title)
+                    .font(.title2.weight(.semibold))
+                Text(selectedSection.subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Divider()
+                    .padding(.top, 10)
+
+                switch selectedSection {
+                case .model:
+                    modelSettings
+                case .privacy:
+                    privacySettings
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(20)
+        .frame(minWidth: 720, minHeight: 520)
     }
 
     private var modelSettings: some View {
         Form {
-            TextField("Base URL", text: $model.modelBaseURL)
-                .onChange(of: model.modelBaseURL) { _, _ in
-                    model.confirmedAPIHostname = false
-                }
-            Text("可填写服务 Base URL，也可直接填写完整的 /responses 地址。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            SecureField("API key", text: $model.apiKey)
-            TextField("模型", text: $model.modelName)
-
-            if let host = model.apiHostname {
-                Toggle(isOn: $model.confirmedAPIHostname) {
-                    Text("我确认截图和页面信息将发送到 **\(host)**，其数据保留规则由该服务提供方决定。")
-                }
-            } else {
-                Text("请输入包含协议和 hostname 的有效 Base URL。")
-                    .foregroundStyle(.red)
+            Section {
+                TextField("Base URL", text: $model.modelBaseURL)
+                    .font(.system(.body, design: .monospaced))
+                    .accessibilityHint("可填写服务 Base URL，也可填写完整的 /responses 地址。")
+                    .onChange(of: model.modelBaseURL) { _, _ in
+                        model.confirmedAPIHostname = false
+                    }
+                SecureField("API Key", text: $model.apiKey)
+                TextField("模型", text: $model.modelName)
+            } header: {
+                Text("模型服务")
+            } footer: {
+                Text("可填写服务 Base URL，也可直接填写完整的 /responses 地址。")
             }
 
-            HStack {
-                Button("测试并保存") {
-                    Task { await model.testAndSaveModelConfiguration() }
+            Section("数据发送确认") {
+                if let host = model.apiHostname {
+                    Toggle(isOn: $model.confirmedAPIHostname) {
+                        Text("我确认截图和页面信息将发送到 **\(host)**，其数据保留规则由该服务提供方决定。")
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    Text("请输入包含协议和 hostname 的有效 Base URL。")
+                        .foregroundStyle(.red)
                 }
-                .disabled(model.modelStatus == .testing)
-                Button("删除配置", role: .destructive) {
-                    Task { await model.deleteModelConfiguration() }
-                }
-                Spacer()
+            }
+
+            Section("连接状态") {
                 connectionStatus
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Section {
+                HStack {
+                    Button("删除配置", role: .destructive) {
+                        Task { await model.deleteModelConfiguration() }
+                    }
+                    Spacer()
+                    Button("测试并保存") {
+                        Task { await model.testAndSaveModelConfiguration() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(model.modelStatus == .testing)
+                }
             }
         }
+        .formStyle(.grouped)
     }
 
     private var privacySettings: some View {
@@ -96,12 +165,14 @@ struct AwaitCueSettingsView: View {
                     text: $model.excludedApplicationBundleIdentifiersText,
                     axis: .vertical
                 )
+                .font(.system(.body, design: .monospaced))
                 .lineLimit(2 ... 5)
                 TextField(
                     "Chromium host，每行一个",
                     text: $model.excludedBrowserHostsText,
                     axis: .vertical
                 )
+                .font(.system(.body, design: .monospaced))
                 .lineLimit(2 ... 5)
                 Text("命中规则时会在本地判定为不适合打断，不生成当前活动截图，也不请求模型。Chromium host 规则同时覆盖其子域；无法可信解析当前 host 时同样不会截图。")
                     .font(.caption)
@@ -123,6 +194,7 @@ struct AwaitCueSettingsView: View {
                 Text("这会删除所有 Hook、模型 API key 和待发送通知，无法撤销。")
             }
         }
+        .formStyle(.grouped)
     }
 
     @ViewBuilder
@@ -139,7 +211,7 @@ struct AwaitCueSettingsView: View {
         case let .failed(message):
             Label(message, systemImage: "xmark.circle.fill")
                 .foregroundStyle(.red)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
