@@ -7,7 +7,8 @@ import {
   type Evidence,
   type ExtensionEvent,
   type NativeCommand,
-  type NormalizedRegion
+  type NormalizedRegion,
+  type SelectionFailureReason
 } from "./protocol";
 
 let nativePort: chrome.runtime.Port | null = null;
@@ -171,6 +172,10 @@ async function handleNativeCommand(value: unknown): Promise<void> {
       await bind(command);
     }
   } catch (error) {
+    if (command.type === "resolveSelection") {
+      postSelectionFailure(command.requestID, "page_access_unavailable");
+      return;
+    }
     const event: ExtensionEvent = {
       type: "error",
       code: "command_failed",
@@ -226,12 +231,24 @@ async function resolveSelection(command: Extract<NativeCommand, { type: "resolve
     })
   );
   if (!matchingWindow) {
-    postEvent({ type: "selectionResolved", requestID: command.requestID, matched: false });
+    postSelectionFailure(command.requestID, "window_not_matched");
     return;
   }
   const tab = matchingWindow.window.tabs?.find((candidate) => candidate.active && typeof candidate.id === "number");
-  if (!tab?.id) {
-    postEvent({ type: "selectionResolved", requestID: command.requestID, matched: false });
+  if (typeof tab?.id !== "number" || typeof tab.url !== "string") {
+    postSelectionFailure(command.requestID, "active_tab_unavailable");
+    return;
+  }
+  const tabURL = tab.url;
+  let url: URL;
+  try {
+    url = new URL(tabURL);
+  } catch {
+    postSelectionFailure(command.requestID, "active_tab_unavailable");
+    return;
+  }
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.host) {
+    postSelectionFailure(command.requestID, "active_tab_unavailable");
     return;
   }
 
@@ -241,11 +258,14 @@ async function resolveSelection(command: Extract<NativeCommand, { type: "resolve
     type: "awaitcue.resolveSelection",
     selectionRect: command.selectionRect
   });
-  if (!isResolvedSelectionResponse(response) || !response.matched || !response.region || !tab.url) {
-    postEvent({ type: "selectionResolved", requestID: command.requestID, matched: false });
+  if (!isResolvedSelectionResponse(response)) {
+    postSelectionFailure(command.requestID, "invalid_page_response");
     return;
   }
-  const url = new URL(tab.url);
+  if (!response.matched || !response.region) {
+    postSelectionFailure(command.requestID, "selection_outside_viewport");
+    return;
+  }
   postEvent({
     type: "selectionResolved",
     requestID: command.requestID,
@@ -254,11 +274,15 @@ async function resolveSelection(command: Extract<NativeCommand, { type: "resolve
       extensionInstallationID: await installationIdentityPromise,
       tabID: tab.id,
       host: url.host,
-      url: tab.url,
+      url: tabURL,
       title: response.title || tab.title || url.host,
       region: response.region
     }
   });
+}
+
+function postSelectionFailure(requestID: string, reason: SelectionFailureReason): void {
+  postEvent({ type: "selectionResolved", requestID, matched: false, reason });
 }
 
 async function postReady(): Promise<void> {

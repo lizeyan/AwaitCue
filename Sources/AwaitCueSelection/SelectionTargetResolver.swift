@@ -2,6 +2,17 @@ import AwaitCueCapture
 import AwaitCueCore
 import CoreGraphics
 
+/// 浏览器框选无法稳定解析到具体标签页的原因；raw value 与扩展协议保持一致。
+public enum BrowserSelectionFailureReason: String, Equatable, Hashable, Sendable {
+    case windowNotMatched = "window_not_matched"
+    case activeTabUnavailable = "active_tab_unavailable"
+    case selectionOutsideViewport = "selection_outside_viewport"
+    case pageAccessUnavailable = "page_access_unavailable"
+    case invalidPageResponse = "invalid_page_response"
+    case noExtensionResponse = "no_extension_response"
+    case ambiguousResponse = "ambiguous_response"
+}
+
 /// Native/browser relay 对当前窗口框选的明确分类结果。
 public enum BrowserSelectionRelayResolution: Equatable, Sendable {
     /// relay 已确认该窗口不是由浏览器标签页接管的 Target。
@@ -9,7 +20,7 @@ public enum BrowserSelectionRelayResolution: Equatable, Sendable {
     /// relay 已根据具体标签页和 viewport 生成 BrowserTarget。
     case resolved(BrowserTarget)
     /// relay 已识别浏览器窗口，但当前无法可靠解析具体标签页。
-    case unavailable
+    case unavailable(BrowserSelectionFailureReason)
 }
 
 /// 浏览器窗口身份和标签页区域的唯一事实来源。
@@ -24,6 +35,7 @@ public protocol BrowserSelectionRelaying: Sendable {
 public struct BrowserSelectionMatchCollector: Sendable {
     private let browserBundleIdentifier: String
     private var matches: [BrowserTarget] = []
+    private var failures: Set<BrowserSelectionFailureReason> = []
 
     public init(browserBundleIdentifier: String) {
         self.browserBundleIdentifier = browserBundleIdentifier
@@ -46,8 +58,32 @@ public struct BrowserSelectionMatchCollector: Sendable {
         matches.append(target)
     }
 
+    public mutating func recordFailure(
+        browserBundleIdentifier: String,
+        reason: BrowserSelectionFailureReason
+    ) {
+        guard browserBundleIdentifier == self.browserBundleIdentifier else { return }
+        failures.insert(reason)
+    }
+
     public var resolution: BrowserSelectionRelayResolution {
-        matches.count == 1 ? .resolved(matches[0]) : .unavailable
+        if matches.count == 1 {
+            return .resolved(matches[0])
+        }
+        if matches.count > 1 {
+            return .unavailable(.ambiguousResponse)
+        }
+        // 多个 Chrome profile 可能各自返回失败；优先展示最接近用户操作的具体原因。
+        let priority: [BrowserSelectionFailureReason] = [
+            .selectionOutsideViewport,
+            .pageAccessUnavailable,
+            .invalidPageResponse,
+            .activeTabUnavailable,
+            .windowNotMatched,
+        ]
+        return priority.first(where: failures.contains)
+            .map(BrowserSelectionRelayResolution.unavailable)
+            ?? .unavailable(.noExtensionResponse)
     }
 }
 
@@ -145,7 +181,7 @@ public struct ActiveBrowserHostMatchCollector: Sendable {
 
 /// 选择已经命中浏览器窗口、但 relay 无法提供稳定标签页身份。
 public enum SelectionTargetError: Error, Equatable, Sendable {
-    case browserRelayUnavailable
+    case browserRelayUnavailable(BrowserSelectionFailureReason)
 }
 
 /// 组合单窗口几何解析与 browser relay，输出最终 HookTarget。
@@ -184,8 +220,8 @@ public struct SelectionTargetResolver: Sendable {
             return .window(selection.windowTarget)
         case let .resolved(browserTarget):
             return .browser(browserTarget)
-        case .unavailable:
-            throw SelectionTargetError.browserRelayUnavailable
+        case let .unavailable(reason):
+            throw SelectionTargetError.browserRelayUnavailable(reason)
         }
     }
 }
