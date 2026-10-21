@@ -131,8 +131,51 @@ struct GlobalSelectionControllerTests {
 
         let result = try await controller.beginSelectionWithPreview()
 
-        #expect(result.previewImage.width == 80)
-        #expect(result.previewImage.height == 40)
+        // 比例换算沿用截图模块的向外取整；浮点边界可能多保留一行或一列像素。
+        #expect((80 ... 81).contains(result.previewImage.width))
+        #expect((40 ... 41).contains(result.previewImage.height))
+    }
+
+    @MainActor
+    @Test("跨显示器框选不会把部分冻结画面冒充成完整预览")
+    func controllerRejectsCrossDisplayPreview() async {
+        let window = DiscoveredWindow(
+            applicationBundleIdentifier: "com.example.editor",
+            applicationName: "Editor",
+            windowIdentifier: 83,
+            title: "Spanning document",
+            frame: CGRect(x: 70, y: 30, width: 70, height: 40)
+        )
+        let controller = GlobalSelectionController(
+            frozenFrameProvider: FixtureFrozenScreenFrameProvider(
+                frames: [
+                    FrozenDisplayFrame(
+                        displayIdentifier: 1,
+                        appKitFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+                        image: fixtureControllerImage(width: 100, height: 100)
+                    ),
+                    FrozenDisplayFrame(
+                        displayIdentifier: 2,
+                        appKitFrame: CGRect(x: 100, y: 0, width: 100, height: 100),
+                        image: fixtureControllerImage(width: 100, height: 100)
+                    ),
+                ]
+            ),
+            discoverWindows: { [window] },
+            browserRelay: FixtureControllerBrowserRelay(),
+            overlayPresenter: FixtureGlobalSelectionOverlayPresenter(
+                interaction: GlobalSelectionInteraction(
+                    anchor: CGPoint(x: 90, y: 50),
+                    selectionRect: CGRect(x: 80, y: 40, width: 40, height: 20)
+                )
+            ),
+            windowZOrderProvider: FixtureWindowZOrderProvider(),
+            primaryDisplayFrame: { CGRect(x: 0, y: 0, width: 200, height: 100) }
+        )
+
+        await #expect(throws: GlobalSelectionControllerError.previewUnavailable) {
+            try await controller.beginSelectionWithPreview()
+        }
     }
 
     @MainActor

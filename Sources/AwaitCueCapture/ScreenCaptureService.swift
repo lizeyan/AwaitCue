@@ -128,7 +128,7 @@ public struct ScreenCaptureService: Sendable {
         let fullImage = try await performSystemOperation {
             try await backend.captureImage(of: window)
         }
-        let image = try crop(fullImage, to: target.normalizedRegion)
+        let image = try Self.croppedImage(fullImage, to: target.normalizedRegion)
         return WindowCaptureObservation(availability: .available, image: image)
     }
 
@@ -154,8 +154,11 @@ public struct ScreenCaptureService: Sendable {
         }
     }
 
-    /// 按实际截图像素裁剪 Target 区域，并让非完整区域脱离完整窗口的图像存储。
-    private func crop(_ image: CGImage, to region: NormalizedRegion) throws -> CGImage {
+    /// 按实际截图像素裁剪区域，并让非完整区域脱离原始图像的像素存储。
+    public static func croppedImage(
+        _ image: CGImage,
+        to region: NormalizedRegion
+    ) throws -> CGImage {
         let cropGeometry = try ImageCropGeometry(
             region: region,
             imageWidth: image.width,

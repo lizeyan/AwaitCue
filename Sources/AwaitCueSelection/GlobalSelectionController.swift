@@ -210,57 +210,17 @@ public final class GlobalSelectionController {
             // 跨显示器区域无法由单个冻结帧完整表达；不能用部分截图伪装成完整证据。
             throw GlobalSelectionControllerError.previewUnavailable
         }
-        let scaleX = CGFloat(frame.image.width) / frame.appKitFrame.width
-        let scaleY = CGFloat(frame.image.height) / frame.appKitFrame.height
-        let minX = floor((selectionRect.minX - frame.appKitFrame.minX) * scaleX)
-        let minY = floor((frame.appKitFrame.maxY - selectionRect.maxY) * scaleY)
-        let maxX = ceil((selectionRect.maxX - frame.appKitFrame.minX) * scaleX)
-        let maxY = ceil((frame.appKitFrame.maxY - selectionRect.minY) * scaleY)
-        let imageBounds = CGRect(
-            x: 0,
-            y: 0,
-            width: frame.image.width,
-            height: frame.image.height
+        let region = NormalizedRegion(
+            x: (selectionRect.minX - frame.appKitFrame.minX) / frame.appKitFrame.width,
+            y: (frame.appKitFrame.maxY - selectionRect.maxY) / frame.appKitFrame.height,
+            width: selectionRect.width / frame.appKitFrame.width,
+            height: selectionRect.height / frame.appKitFrame.height
         )
-        let pixelRect = CGRect(
-            x: minX,
-            y: minY,
-            width: maxX - minX,
-            height: maxY - minY
-        ).intersection(imageBounds)
-        guard
-            !pixelRect.isNull,
-            pixelRect.width > 0,
-            pixelRect.height > 0,
-            let croppedView = frame.image.cropping(to: pixelRect)
-        else {
+        do {
+            // 复用窗口截图已经验证过的向外取整和独立像素复制，避免两套裁剪规则漂移。
+            return try ScreenCaptureService.croppedImage(frame.image, to: region)
+        } catch {
             throw GlobalSelectionControllerError.previewUnavailable
         }
-
-        // CGImage.cropping 可能继续持有完整屏幕像素；重绘后让未框选内容立即释放。
-        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(
-            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
-        )
-        guard let context = CGContext(
-            data: nil,
-            width: croppedView.width,
-            height: croppedView.height,
-            bitsPerComponent: 8,
-            bytesPerRow: croppedView.width * 4,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo.rawValue
-        ) else {
-            throw GlobalSelectionControllerError.previewUnavailable
-        }
-        context.interpolationQuality = .none
-        context.draw(
-            croppedView,
-            in: CGRect(x: 0, y: 0, width: croppedView.width, height: croppedView.height)
-        )
-        guard let detachedImage = context.makeImage() else {
-            throw GlobalSelectionControllerError.previewUnavailable
-        }
-        return detachedImage
     }
 }
