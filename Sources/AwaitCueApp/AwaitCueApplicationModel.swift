@@ -114,7 +114,6 @@ final class AwaitCueApplicationModel: ObservableObject {
         hasStarted = true
         do {
             hooks = try await coordinator?.restoreActiveHooks() ?? []
-            _ = try await notificationClient.requestAuthorization()
             notificationActionTask = Task { [weak self, notificationClient] in
                 for await action in notificationClient.actions {
                     guard !Task.isCancelled else { return }
@@ -139,6 +138,10 @@ final class AwaitCueApplicationModel: ObservableObject {
                 Task { await self?.beginNewHookSelection() }
             }
             startWorkspaceEventMonitoring()
+            // 通知授权可能等待用户操作；不能让它阻塞 SQLite、relay、快捷键和观察 Runtime 启动。
+            Task { [notificationClient] in
+                _ = try? await notificationClient.requestAuthorization()
+            }
         } catch {
             startupError = Self.userFacingMessage(for: error)
         }
