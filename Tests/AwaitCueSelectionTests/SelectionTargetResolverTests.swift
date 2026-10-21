@@ -7,6 +7,24 @@ import Testing
 
 @Suite("浏览器 relay 目标分类")
 struct SelectionTargetResolverTests {
+    @Test("唯一扩展一旦响应就完成，多扩展仍保留歧义收集窗口")
+    func browserSelectionResponseGateUsesRecipientCount() {
+        var earlyResponse = BrowserSelectionResponseGate()
+        earlyResponse.recordAcceptedResponse()
+        #expect(earlyResponse.isComplete == false)
+        earlyResponse.setExpectedResponseCount(1)
+        #expect(earlyResponse.isComplete)
+
+        var multipleProfiles = BrowserSelectionResponseGate()
+        multipleProfiles.setExpectedResponseCount(2)
+        multipleProfiles.recordAcceptedResponse()
+        #expect(multipleProfiles.isComplete == false)
+
+        var noExtension = BrowserSelectionResponseGate()
+        noExtension.setExpectedResponseCount(0)
+        #expect(noExtension.isComplete)
+    }
+
     @Test("浏览器选择只接受同 bundle 的唯一 installation 响应")
     func browserSelectionRejectsCrossBrowserAndAmbiguousResponses() {
         let chromeTarget = fixtureBrowserTarget(

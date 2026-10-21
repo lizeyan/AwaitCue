@@ -96,7 +96,9 @@ struct AwaitCueMenuView: View {
             }
             .disabled(model.isSelectingTarget)
             Spacer()
-            Button("设置…") { model.openSettings() }
+            SettingsLink {
+                Text("设置…")
+            }
             Button("退出") { model.quit() }
         }
     }

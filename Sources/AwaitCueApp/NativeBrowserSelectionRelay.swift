@@ -16,6 +16,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         let nativeWindowIdentifier: UInt32
         let continuation: CheckedContinuation<BrowserSelectionRelayResolution, any Error>
         var collector: BrowserSelectionMatchCollector
+        var responseGate: BrowserSelectionResponseGate
     }
 
     private struct PendingActiveHost {
@@ -158,11 +159,16 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
                 continuation: continuation,
                 collector: BrowserSelectionMatchCollector(
                     browserBundleIdentifier: selection.window.applicationBundleIdentifier
-                )
+                ),
+                responseGate: BrowserSelectionResponseGate()
             )
             Task { [weak self, server] in
                 do {
-                    try await server.broadcastPayload(payload)
+                    let recipientCount = try await server.broadcastPayload(payload)
+                    await self?.setExpectedSelectionResponseCount(
+                        recipientCount,
+                        requestID: requestID
+                    )
                 } catch {
                     await self?.finish(
                         requestID: requestID,
@@ -329,7 +335,9 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
                 browserBundleIdentifier: browserBundleIdentifier,
                 reason: reason
             )
+            pendingSelection.responseGate.recordAcceptedResponse()
             pending[requestID] = pendingSelection
+            finishSelectionIfComplete(requestID: requestID)
             return
         }
         guard let target = object["target"] as? [String: Any],
@@ -346,7 +354,9 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
                 browserBundleIdentifier: browserBundleIdentifier,
                 reason: .invalidPageResponse
             )
+            pendingSelection.responseGate.recordAcceptedResponse()
             pending[requestID] = pendingSelection
+            finishSelectionIfComplete(requestID: requestID)
             return
         }
         let browserTarget = BrowserTarget(
@@ -364,7 +374,9 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             browserBundleIdentifier: browserBundleIdentifier,
             target: browserTarget
         )
+        pendingSelection.responseGate.recordAcceptedResponse()
         pending[requestID] = pendingSelection
+        finishSelectionIfComplete(requestID: requestID)
     }
 
     private func handleActiveHostResponse(_ object: [String: Any]) {
@@ -396,6 +408,18 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
 
     private func finishSelectionAfterCollection(requestID: String) {
         guard let selection = pending[requestID] else { return }
+        finish(requestID: requestID, with: selection.collector.resolution)
+    }
+
+    private func setExpectedSelectionResponseCount(_ count: Int, requestID: String) {
+        guard var selection = pending[requestID] else { return }
+        selection.responseGate.setExpectedResponseCount(count)
+        pending[requestID] = selection
+        finishSelectionIfComplete(requestID: requestID)
+    }
+
+    private func finishSelectionIfComplete(requestID: String) {
+        guard let selection = pending[requestID], selection.responseGate.isComplete else { return }
         finish(requestID: requestID, with: selection.collector.resolution)
     }
 

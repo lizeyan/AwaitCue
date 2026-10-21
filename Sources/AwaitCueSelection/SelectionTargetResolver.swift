@@ -23,6 +23,28 @@ public enum BrowserSelectionRelayResolution: Equatable, Sendable {
     case unavailable(BrowserSelectionFailureReason)
 }
 
+/// 追踪一次广播需要等待多少个扩展实例响应，并容忍响应早于 peer 数量回传。
+public struct BrowserSelectionResponseGate: Equatable, Sendable {
+    private var expectedResponseCount: Int?
+    private var hasAcceptedResponse = false
+
+    public init() {}
+
+    public mutating func setExpectedResponseCount(_ count: Int) {
+        expectedResponseCount = max(0, count)
+    }
+
+    public mutating func recordAcceptedResponse() {
+        hasAcceptedResponse = true
+    }
+
+    public var isComplete: Bool {
+        guard let expectedResponseCount else { return false }
+        return expectedResponseCount == 0
+            || (expectedResponseCount == 1 && hasAcceptedResponse)
+    }
+}
+
 /// 浏览器窗口身份和标签页区域的唯一事实来源。
 public protocol BrowserSelectionRelaying: Sendable {
     /// 分类一个精确窗口框选；实现方负责识别浏览器 bundle 和具体标签页。

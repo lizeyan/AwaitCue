@@ -105,14 +105,16 @@ public final class NativeBridgeServer: @unchecked Sendable {
         }
     }
 
-    /// 向当前所有已认证 native host 发送一个 JSON payload。
-    public func broadcastPayload(_ payload: Data) async throws {
+    /// 向当前所有已认证 native host 发送一个 JSON payload，并返回本次广播的稳定接收方数量。
+    @discardableResult
+    public func broadcastPayload(_ payload: Data) async throws -> Int {
         let currentPeers: [NativeBridgePeer] = queue.sync {
             peers.values.filter(\.isAuthenticated)
         }
         for peer in currentPeers {
             try await peer.send(payload)
         }
+        return currentPeers.count
     }
 
     /// 停止 listener 和全部已认证连接。

@@ -39,7 +39,8 @@ struct LocalNativeBridgeTests {
         try await client.sendPayload(fromExtension)
         #expect(await serverMessages.next() == fromExtension)
 
-        try await server.broadcastPayload(fromApp)
+        let recipientCount = try await server.broadcastPayload(fromApp)
+        #expect(recipientCount == 1)
         #expect(await clientMessages.next() == fromApp)
     }
 
