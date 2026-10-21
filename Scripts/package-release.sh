@@ -10,9 +10,23 @@ readonly staging_path="dist/dmg-root"
 
 ./Scripts/build-app.sh
 
-codesign --force --deep --options runtime \
-  --entitlements Config/AwaitCue.entitlements \
-  --sign "${identity}" "${app_path}"
+if [[ "${identity}" == "-" ]]; then
+  # 纯 ad-hoc 签名默认以 cdhash 作为 designated requirement，每次构建都会让 TCC 授权失效。
+  # 开发构建固定 identifier requirement；正式 Developer ID 流程仍使用证书提供的 requirement。
+  codesign --force --options runtime \
+    --identifier org.awaitcue.AwaitCue.NativeHost \
+    --requirements '=designated => identifier "org.awaitcue.AwaitCue.NativeHost"' \
+    --sign - "${app_path}/Contents/MacOS/AwaitCueNativeHost"
+  codesign --force --options runtime \
+    --identifier org.awaitcue.AwaitCue \
+    --requirements '=designated => identifier "org.awaitcue.AwaitCue"' \
+    --entitlements Config/AwaitCue.entitlements \
+    --sign - "${app_path}"
+else
+  codesign --force --deep --options runtime \
+    --entitlements Config/AwaitCue.entitlements \
+    --sign "${identity}" "${app_path}"
+fi
 codesign --verify --deep --strict --verbose=2 "${app_path}"
 
 rm -rf "${staging_path}" "${dmg_path}"
