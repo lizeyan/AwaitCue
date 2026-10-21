@@ -418,10 +418,6 @@ final class AwaitCueApplicationModel: ObservableObject {
         }
     }
 
-    func openSettings() {
-        NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-    }
-
     func updateGlobalShortcut(_ preset: GlobalShortcutPreset) {
         guard preset != globalShortcutPreset else { return }
         let previousPreset = globalShortcutPreset
