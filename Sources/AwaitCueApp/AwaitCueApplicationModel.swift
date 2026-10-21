@@ -60,6 +60,7 @@ final class AwaitCueApplicationModel: ObservableObject {
     private var sessionActivityObserver: NSObjectProtocol?
     private var applicationActivationObserver: NSObjectProtocol?
     private var notificationActionTask: Task<Void, Never>?
+    private var pendingInitialEvidence: ModelEvidence?
 
     init() {
         let defaults = UserDefaults.standard
@@ -243,8 +244,15 @@ final class AwaitCueApplicationModel: ObservableObject {
         isSelectingTarget = true
         defer { isSelectingTarget = false }
         do {
-            let target = try await selectionController.beginSelection()
-            hookCreationPresentationCoordinator.selectionCompleted(target) { pendingTarget = $0 }
+            let selection = try await selectionController.beginSelectionWithPreview()
+            let evidence = try Self.previewEvidence(
+                for: selection.target,
+                image: selection.previewImage
+            )
+            hookCreationPresentationCoordinator.selectionCompleted(selection.target) {
+                pendingTarget = $0
+                pendingInitialEvidence = evidence
+            }
         } catch {
             startupError = Self.userFacingMessage(for: error)
         }
@@ -294,13 +302,7 @@ final class AwaitCueApplicationModel: ObservableObject {
                     confidence: prepared.confidence
                 )
             case .browser:
-                // 框选阶段只确认了 tab 身份和区域，尚未开始 DOM/tabCapture；不能把 title/host 当成当前状态证据。
-                PreparedCondition(
-                    confirmedSummary: prepared.confirmedSummary,
-                    requiredEvidence: prepared.requiredEvidence,
-                    currentDecision: .uncertain,
-                    confidence: 0
-                )
+                prepared
             }
         } catch {
             conditionPreview = nil
@@ -365,6 +367,7 @@ final class AwaitCueApplicationModel: ObservableObject {
     private func finishPendingTarget() {
         hookCreationPresentationCoordinator.finish {
             pendingTarget = nil
+            pendingInitialEvidence = nil
             conditionPreview = nil
         }
     }
@@ -717,6 +720,9 @@ final class AwaitCueApplicationModel: ObservableObject {
     }
 
     private func initialEvidence(for target: HookTarget) async throws -> ModelEvidence {
+        if target == pendingTarget, let pendingInitialEvidence {
+            return pendingInitialEvidence
+        }
         switch target {
         case let .window(window):
             let observation = try await ScreenCaptureService().capture(window)
@@ -736,7 +742,34 @@ final class AwaitCueApplicationModel: ObservableObject {
         }
     }
 
+    /// 把冻结框选压缩为只驻留内存的 JPEG，并附上稳定 Target 上下文供首次模型判断。
+    private static func previewEvidence(
+        for target: HookTarget,
+        image: CGImage
+    ) throws -> ModelEvidence {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        guard let jpeg = bitmap.representation(
+            using: .jpeg,
+            properties: [.compressionFactor: 0.72]
+        ) else {
+            throw OpenAIResponsesClientError.invalidRequest
+        }
+        let contextText = switch target {
+        case let .window(window):
+            window.initialTitle
+        case let .browser(browser):
+            "\(browser.initialTitle)\n\(browser.host)"
+        }
+        return ModelEvidence(
+            text: contextText,
+            image: ModelImage(data: jpeg, mediaType: "image/jpeg")
+        )
+    }
+
     private static func userFacingMessage(for error: Error) -> String {
+        if error as? GlobalSelectionControllerError == .previewUnavailable {
+            return "框选区域必须完整位于一块显示器内，才能进行创建前状态分析。"
+        }
         if case let SelectionTargetError.browserRelayUnavailable(reason) = error {
             return switch reason {
             case .windowNotMatched:

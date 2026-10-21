@@ -93,6 +93,9 @@ struct OpenAIResponsesClientTests {
         #expect(body["store"] as? Bool == false)
         let reasoning = try #require(body["reasoning"] as? [String: Any])
         #expect(reasoning["effort"] as? String == "none")
+        let instructions = try #require(body["instructions"] as? String)
+        #expect(instructions.contains("用户指定的具体子条件"))
+        #expect(instructions.contains("页面整体失败"))
 
         let input = try #require(body["input"] as? [[String: Any]])
         let content = try #require(input.first?["content"] as? [[String: Any]])
