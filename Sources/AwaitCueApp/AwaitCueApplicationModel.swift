@@ -48,6 +48,7 @@ final class AwaitCueApplicationModel: ObservableObject {
     private let selectionController: GlobalSelectionController
     private let privacyExclusionStore: AppPrivacyExclusionStore
     private let keychainStore = KeychainSecretStore(service: "org.awaitcue.model")
+    private let hookCreationPresentationCoordinator = HookCreationPresentationCoordinator()
     private let apiKeyAccount = "default-responses-api-key"
     private var hasStarted = false
     private var bridgeStatusTask: Task<Void, Never>?
@@ -231,6 +232,10 @@ final class AwaitCueApplicationModel: ObservableObject {
     /// 冻结全部显示器并让用户框选一个稳定 Target。
     func beginNewHookSelection() async {
         guard !isSelectingTarget else { return }
+        guard pendingTarget == nil else {
+            hookCreationPresentationCoordinator.presentExisting()
+            return
+        }
         guard screenCapturePermissionGranted || requestScreenCapturePermission() else {
             startupError = "需要屏幕录制权限才能冻结屏幕并观察框选目标。授权后请重新启动 AwaitCue。"
             return
@@ -238,7 +243,8 @@ final class AwaitCueApplicationModel: ObservableObject {
         isSelectingTarget = true
         defer { isSelectingTarget = false }
         do {
-            pendingTarget = try await selectionController.beginSelection()
+            let target = try await selectionController.beginSelection()
+            hookCreationPresentationCoordinator.selectionCompleted(target) { pendingTarget = $0 }
         } catch {
             startupError = Self.userFacingMessage(for: error)
         }
@@ -255,7 +261,7 @@ final class AwaitCueApplicationModel: ObservableObject {
                 now: .now
             )
             try await coordinator.add(hook)
-            pendingTarget = nil
+            finishPendingTarget()
             hooks = try await coordinator.restoreActiveHooks()
             try await runtime?.advanceMinimumWaits()
             return true
@@ -334,8 +340,7 @@ final class AwaitCueApplicationModel: ObservableObject {
                     throw error
                 }
             }
-            pendingTarget = nil
-            conditionPreview = nil
+            finishPendingTarget()
             hooks = try await coordinator.restoreActiveHooks()
             try await runtime?.observeCondition(hookID: hook.id)
             return true
@@ -346,12 +351,22 @@ final class AwaitCueApplicationModel: ObservableObject {
     }
 
     func dismissPendingTarget() {
-        pendingTarget = nil
-        conditionPreview = nil
+        finishPendingTarget()
+    }
+
+    func attachHookCreationPresenter(_ presenter: any HookCreationPresenting) {
+        hookCreationPresentationCoordinator.attach(presenter)
     }
 
     func clearConditionPreview() {
         conditionPreview = nil
+    }
+
+    private func finishPendingTarget() {
+        hookCreationPresentationCoordinator.finish {
+            pendingTarget = nil
+            conditionPreview = nil
+        }
     }
 
     /// 仅在用户主动新建 Hook 或设置页点击时请求屏幕录制权限。
@@ -381,6 +396,7 @@ final class AwaitCueApplicationModel: ObservableObject {
             modelName = "gpt-6-luna"
             modelStatus = .notConfigured
             confirmedAPIHostname = false
+            finishPendingTarget()
             excludedApplicationBundleIdentifiersText = ""
             excludedBrowserHostsText = ""
             UserDefaults.standard.removeObject(

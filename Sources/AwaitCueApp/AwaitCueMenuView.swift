@@ -18,14 +18,6 @@ struct AwaitCueMenuView: View {
             footer
         }
         .padding(14)
-        .sheet(
-            isPresented: Binding(
-                get: { model.pendingTarget != nil },
-                set: { if !$0 { model.dismissPendingTarget() } }
-            )
-        ) {
-            HookCreationView(model: model)
-        }
     }
 
     private var header: some View {
