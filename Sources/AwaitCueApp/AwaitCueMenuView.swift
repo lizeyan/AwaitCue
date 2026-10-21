@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AwaitCueMenuView: View {
     @ObservedObject var model: AwaitCueApplicationModel
+    let openSettings: @MainActor () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -96,9 +97,7 @@ struct AwaitCueMenuView: View {
             }
             .disabled(model.isSelectingTarget)
             Spacer()
-            SettingsLink {
-                Text("设置…")
-            }
+            Button("设置…", action: openSettings)
             Button("退出") { model.quit() }
         }
     }
