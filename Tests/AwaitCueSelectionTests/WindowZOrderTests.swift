@@ -18,6 +18,19 @@ struct WindowZOrderTests {
 
         #expect(ordered.map(\.windowIdentifier) == [92, 91, 93])
     }
+
+    @Test("系统顺序未列出的窗口保持发现时的相对顺序")
+    func preservesRelativeOrderForUnlistedWindows() {
+        let first = zOrderWindow(identifier: 101)
+        let second = zOrderWindow(identifier: 102)
+
+        let ordered = WindowZOrder.order(
+            [first, second],
+            identifiersFrontToBack: []
+        )
+
+        #expect(ordered.map(\.windowIdentifier) == [101, 102])
+    }
 }
 
 private func zOrderWindow(identifier: UInt32) -> DiscoveredWindow {
