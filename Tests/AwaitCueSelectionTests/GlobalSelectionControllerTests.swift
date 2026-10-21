@@ -350,18 +350,24 @@ struct GlobalSelectionControllerTests {
             normalizedRegion: NormalizedRegion(x: 0.05, y: 0.125, width: 0.25, height: 0.2),
             observationMode: .domAndImage
         )
+        let relay = FixtureControllerBrowserRelay(
+            resolution: .resolved(target),
+            previewDOMText: "[10,20] Build succeeded"
+        )
         let controller = GlobalSelectionController(
             frozenFrameProvider: FixtureFrozenScreenFrameProvider(
                 frames: [FrozenDisplayFrame(displayIdentifier: 1, appKitFrame: CGRect(x: 0, y: 0, width: 1_000, height: 800), image: image)]
             ),
             discoverWindows: { [original] },
-            browserRelay: FixtureControllerBrowserRelay(resolution: .resolved(target)),
+            browserRelay: relay,
             overlayPresenter: fixtureSelectionPresenter(),
             windowZOrderProvider: FixtureWindowZOrderProvider(),
             primaryDisplayFrame: { CGRect(x: 0, y: 0, width: 1_000, height: 800) }
         )
 
-        #expect(try await controller.beginSelection() == .browser(target))
+        let result = try await controller.beginSelectionWithPreview()
+        #expect(result.target == .browser(target))
+        #expect(result.browserDOMText == "[10,20] Build succeeded")
     }
 
     @MainActor
@@ -469,10 +475,15 @@ private final class FixtureGlobalSelectionOverlayPresenter: GlobalSelectionOverl
 
 private actor FixtureControllerBrowserRelay: BrowserSelectionRelaying {
     private let resolution: BrowserSelectionRelayResolution
+    private let previewDOMText: String?
     private(set) var resolveCallCount = 0
 
-    init(resolution: BrowserSelectionRelayResolution = .notBrowser) {
+    init(
+        resolution: BrowserSelectionRelayResolution = .notBrowser,
+        previewDOMText: String? = nil
+    ) {
         self.resolution = resolution
+        self.previewDOMText = previewDOMText
     }
 
     func resolveBrowserTarget(
@@ -480,6 +491,10 @@ private actor FixtureControllerBrowserRelay: BrowserSelectionRelaying {
     ) async throws -> BrowserSelectionRelayResolution {
         resolveCallCount += 1
         return resolution
+    }
+
+    func previewDOMText(for target: BrowserTarget) async -> String? {
+        previewDOMText
     }
 }
 

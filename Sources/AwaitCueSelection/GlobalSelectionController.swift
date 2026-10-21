@@ -34,11 +34,17 @@ public enum GlobalSelectionControllerError: Error, Equatable, Sendable {
 public struct GlobalSelectionResult: Sendable {
     public let target: HookTarget
     public let previewImage: CGImage
+    public let browserDOMText: String?
 
     /// 保存最终 Target 和已经脱离完整屏幕像素存储的区域预览。
-    public init(target: HookTarget, previewImage: CGImage) {
+    public init(
+        target: HookTarget,
+        previewImage: CGImage,
+        browserDOMText: String? = nil
+    ) {
         self.target = target
         self.previewImage = previewImage
+        self.browserDOMText = browserDOMText
     }
 }
 
@@ -145,12 +151,20 @@ public final class GlobalSelectionController {
         guard Self.target(target, frozenWindows: orderedWindows, stillMatches: currentWindows) else {
             throw GlobalSelectionControllerError.windowChangedDuringSelection
         }
+        let browserDOMText: String?
+        switch target {
+        case let .browser(browser):
+            browserDOMText = await browserRelay.previewDOMText(for: browser)
+        case .window:
+            browserDOMText = nil
+        }
         return GlobalSelectionResult(
             target: target,
             previewImage: try Self.previewImage(
                 for: interaction.selectionRect,
                 in: frames
-            )
+            ),
+            browserDOMText: browserDOMText
         )
     }
 

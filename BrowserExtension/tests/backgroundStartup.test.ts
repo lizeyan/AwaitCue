@@ -127,6 +127,42 @@ describe("background service worker startup", () => {
     expect(event).toMatchObject({ matched: false, reason: "selection_outside_viewport" });
   });
 
+  it("forwards the selected region DOM evidence with the resolved tab", async () => {
+    const fixture = makeBackgroundFixture();
+    fixture.windowsGetAll.mockResolvedValue([{
+      left: 100,
+      top: 50,
+      width: 1_200,
+      height: 800,
+      tabs: [{ id: 7, active: true, url: "https://build.example/job", title: "Build" }]
+    }]);
+    fixture.tabsSendMessage.mockResolvedValue({
+      matched: true,
+      region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+      title: "Build",
+      evidence: {
+        hookID: "request-1",
+        url: "https://build.example/job",
+        title: "Build",
+        text: "[10,20] Build succeeded",
+        aria: ["class:status-success"],
+        fingerprint: "12345678"
+      }
+    });
+
+    const event = await resolveSelection(fixture);
+
+    expect(event).toMatchObject({
+      matched: true,
+      target: {
+        evidence: {
+          text: "[10,20] Build succeeded",
+          aria: ["class:status-success"]
+        }
+      }
+    });
+  });
+
   it("keeps the request identity when page access fails", async () => {
     const fixture = makeBackgroundFixture();
     fixture.windowsGetAll.mockResolvedValue([{

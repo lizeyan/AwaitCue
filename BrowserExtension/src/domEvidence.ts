@@ -3,6 +3,10 @@ import { denormalizeRegion, intersects } from "./region";
 
 const maximumTextLength = 4_000;
 const observedAttributes = ["aria-label", "aria-valuenow", "aria-valuetext", "role", "title", "alt"];
+const ignoredTextParentTags = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"]);
+const semanticClassPattern = /(success|succeed|done|complete|check|fail|error|running|loading|pending|wait|ignored|disabled|status|progress)/i;
+
+type EvidenceRow = Readonly<{ x: number; y: number; text: string }>;
 
 /** 从框选区域内的 DOM 提取有限且稳定的文本证据。 */
 export function collectEvidence(
@@ -11,21 +15,66 @@ export function collectEvidence(
   region: NormalizedRegion
 ): Evidence {
   const pixelRegion = denormalizeRegion(region, document.documentElement.clientWidth, document.documentElement.clientHeight);
-  const textParts: string[] = [];
+  const rows: EvidenceRow[] = [];
   const aria = new Set<string>();
+
+  // 元素盒可能横跨整页，即使文字实际位于选区外；Range 才能给出文字本身的可见位置。
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const parent = node.parentElement;
+    if (!parent || ignoredTextParentTags.has(parent.tagName)) continue;
+    const style = document.defaultView?.getComputedStyle(parent);
+    if (style?.display === "none" || style?.visibility === "hidden") continue;
+    const text = normalizeText(node.nodeValue ?? "");
+    if (!text) continue;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const rects = [...range.getClientRects()].filter((rect) => intersects(rect, pixelRegion));
+    range.detach();
+    if (rects.length === 0) continue;
+    const rect = rects[0]!;
+    rows.push({
+      x: Math.round(rect.left - pixelRegion.x),
+      y: Math.round(rect.top - pixelRegion.y),
+      text
+    });
+  }
 
   for (const element of document.querySelectorAll<HTMLElement>("body *")) {
     const rect = element.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0 || !intersects(rect, pixelRegion)) continue;
-    const ownText = normalizeText(element.childNodes.length === 1 ? element.textContent ?? "" : "");
-    if (ownText) textParts.push(ownText);
     for (const attribute of observedAttributes) {
       const value = normalizeText(element.getAttribute(attribute) ?? "");
-      if (value) aria.add(`${attribute}:${value}`);
+      if (!value) continue;
+      const semantic = `${attribute}:${value}`;
+      aria.add(semantic);
+      rows.push({
+        x: Math.round(rect.left - pixelRegion.x),
+        y: Math.round(rect.top - pixelRegion.y),
+        text: semantic
+      });
+    }
+    for (const token of element.classList) {
+      if (!semanticClassPattern.test(token)) continue;
+      const semantic = `class:${token}`;
+      aria.add(semantic);
+      rows.push({
+        x: Math.round(rect.left - pixelRegion.x),
+        y: Math.round(rect.top - pixelRegion.y),
+        text: semantic
+      });
     }
   }
 
-  const text = normalizeText(textParts.join(" ")).slice(0, maximumTextLength);
+  rows.sort((left, right) => Math.abs(left.y - right.y) <= 3 ? left.x - right.x : left.y - right.y);
+  const seenRows = new Set<string>();
+  const text = rows.flatMap((row) => {
+    const key = `${row.x}|${row.y}|${row.text}`;
+    if (seenRows.has(key)) return [];
+    seenRows.add(key);
+    return [`[${row.x},${row.y}] ${row.text}`];
+  }).join("\n").slice(0, maximumTextLength);
   const ariaValues = [...aria].sort().slice(0, 100);
   return {
     hookID,

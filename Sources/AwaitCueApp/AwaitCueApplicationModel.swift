@@ -247,7 +247,8 @@ final class AwaitCueApplicationModel: ObservableObject {
             let selection = try await selectionController.beginSelectionWithPreview()
             let evidence = try Self.previewEvidence(
                 for: selection.target,
-                image: selection.previewImage
+                image: selection.previewImage,
+                browserDOMText: selection.browserDOMText
             )
             hookCreationPresentationCoordinator.selectionCompleted(selection.target) {
                 pendingTarget = $0
@@ -301,8 +302,14 @@ final class AwaitCueApplicationModel: ObservableObject {
                     currentDecision: prepared.currentDecision,
                     confidence: prepared.confidence
                 )
-            case .browser:
-                prepared
+            case let .browser(browser):
+                // Chromium 页面同时依赖可读内容与视觉状态；不能让模型把其中一种误判为足够。
+                PreparedCondition(
+                    confirmedSummary: prepared.confirmedSummary,
+                    requiredEvidence: browser.observationMode.evidenceRequirement,
+                    currentDecision: prepared.currentDecision,
+                    confidence: prepared.confidence
+                )
             }
         } catch {
             conditionPreview = nil
@@ -334,7 +341,7 @@ final class AwaitCueApplicationModel: ObservableObject {
                     try await browserSelectionRelay.bind(
                         hookID: hook.id,
                         target: browserTarget,
-                        requirePixels: prepared.requiredEvidence != .dom
+                        requirePixels: browserTarget.observationMode.evidenceRequirement != .dom
                     )
                 } catch {
                     // 创建对用户是一个整体操作；bind 失败时必须把已经落盘的 Hook 一并回滚。
@@ -636,14 +643,14 @@ final class AwaitCueApplicationModel: ObservableObject {
         for hook in try await coordinator.restoreActiveHooks() {
             guard hook.state == .observing,
                   case let .browser(target) = hook.target,
-                  case let .condition(condition) = hook.trigger
+                  case .condition = hook.trigger
             else {
                 continue
             }
             try await browserSelectionRelay.bind(
                 hookID: hook.id,
                 target: target,
-                requirePixels: condition.requiredEvidence != .dom
+                requirePixels: target.observationMode.evidenceRequirement != .dom
             )
         }
     }
@@ -745,12 +752,14 @@ final class AwaitCueApplicationModel: ObservableObject {
     /// 把冻结框选压缩为只驻留内存的 JPEG，并附上稳定 Target 上下文供首次模型判断。
     private static func previewEvidence(
         for target: HookTarget,
-        image: CGImage
+        image: CGImage,
+        browserDOMText: String?
     ) throws -> ModelEvidence {
-        let bitmap = NSBitmapImageRep(cgImage: image)
+        let resizedImage = try resizedPreviewImage(image, maximumDimension: 1_024)
+        let bitmap = NSBitmapImageRep(cgImage: resizedImage)
         guard let jpeg = bitmap.representation(
             using: .jpeg,
-            properties: [.compressionFactor: 0.72]
+            properties: [.compressionFactor: 0.62]
         ) else {
             throw OpenAIResponsesClientError.invalidRequest
         }
@@ -762,8 +771,42 @@ final class AwaitCueApplicationModel: ObservableObject {
         }
         return ModelEvidence(
             text: contextText,
+            domText: browserDOMText,
             image: ModelImage(data: jpeg, mediaType: "image/jpeg")
         )
+    }
+
+    /// 创建前截图只需支持快速决策；限制长边可以显著减少视觉 tokens 和服务端预处理时间。
+    private static func resizedPreviewImage(
+        _ image: CGImage,
+        maximumDimension: Int
+    ) throws -> CGImage {
+        let sourceMaximum = max(image.width, image.height)
+        guard sourceMaximum > maximumDimension else { return image }
+        let scale = Double(maximumDimension) / Double(sourceMaximum)
+        let width = max(1, Int((Double(image.width) * scale).rounded()))
+        let height = max(1, Int((Double(image.height) * scale).rounded()))
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(
+            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
+        )
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            throw OpenAIResponsesClientError.invalidRequest
+        }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let resized = context.makeImage() else {
+            throw OpenAIResponsesClientError.invalidRequest
+        }
+        return resized
     }
 
     private static func userFacingMessage(for error: Error) -> String {

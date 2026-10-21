@@ -37,6 +37,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     private var pendingActiveHosts: [String: PendingActiveHost] = [:]
     private var evidenceByHook: [HookID: ModelEvidence] = [:]
     private var installationByHook: [HookID: BoundInstallation] = [:]
+    private var previewDOMByTarget: [String: String] = [:]
     private var listenTask: Task<Void, Never>?
 
     init(server: NativeBridgeServer) {
@@ -74,6 +75,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             hostQuery.continuation.resume(returning: .unavailable)
         }
         pendingActiveHosts.removeAll()
+        previewDOMByTarget.removeAll()
         statusContinuation.finish()
         evidenceUpdateContinuation.finish()
         targetUnavailableContinuation.finish()
@@ -134,6 +136,11 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             throw HookRuntimeEvidenceError.browserExtensionDisconnected
         }
         return evidence
+    }
+
+    /// 取出框选响应携带的初始 DOM；读取后立即删除，避免页面内容在内存中长期滞留。
+    func previewDOMText(for target: BrowserTarget) -> String? {
+        previewDOMByTarget.removeValue(forKey: Self.previewKey(for: target))
     }
 
     /// 非浏览器明确降级到 WindowTarget；浏览器必须由扩展返回具体 tab，超时不会猜测。
@@ -276,7 +283,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
               let browserBundleIdentifier = object["browserBundleIdentifier"] as? String,
               let hookIDString = evidence["hookID"] as? String,
               let uuid = UUID(uuidString: hookIDString),
-              let text = evidence["text"] as? String
+              let domText = Self.domText(from: evidence)
         else {
             return
         }
@@ -288,7 +295,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             return
         }
         let previous = evidenceByHook[hookID]
-        evidenceByHook[hookID] = ModelEvidence(domText: text, image: previous?.image)
+        evidenceByHook[hookID] = ModelEvidence(domText: domText, image: previous?.image)
         evidenceUpdateContinuation.yield(hookID)
     }
 
@@ -370,6 +377,11 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             normalizedRegion: region,
             observationMode: .domAndImage
         )
+        if let evidence = target["evidence"] as? [String: Any],
+           let domText = Self.domText(from: evidence)
+        {
+            previewDOMByTarget[Self.previewKey(for: browserTarget)] = domText
+        }
         pendingSelection.collector.record(
             browserBundleIdentifier: browserBundleIdentifier,
             target: browserTarget
@@ -377,6 +389,28 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         pendingSelection.responseGate.recordAcceptedResponse()
         pending[requestID] = pendingSelection
         finishSelectionIfComplete(requestID: requestID)
+    }
+
+    /// 把扩展的标题、URL、区域文字和语义属性整理成模型可读但不持久化的网页证据。
+    private static func domText(from evidence: [String: Any]) -> String? {
+        let title = (evidence["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = (evidence["url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = (evidence["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let semantics = (evidence["aria"] as? [String])?
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        let parts = [
+            title.map { "页面标题：\($0)" },
+            url.map { "页面 URL：\($0)" },
+            text.map { "框选内容（坐标相对于选区左上角，单位为 CSS 像素）：\n\($0)" },
+            semantics.map { "语义属性：\n\($0)" },
+        ].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
+    }
+
+    private static func previewKey(for target: BrowserTarget) -> String {
+        "\(target.extensionInstallationID)|\(target.tabIdentifier)|\(target.initialURL.absoluteString)"
     }
 
     private func handleActiveHostResponse(_ object: [String: Any]) {
