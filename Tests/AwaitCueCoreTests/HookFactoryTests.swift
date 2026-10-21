@@ -91,6 +91,13 @@ struct HookFactoryTests {
         }
     }
 
+    @Test("浏览器观察模式映射为模型实际需要的证据组合")
+    func browserObservationModeDefinesEvidenceRequirement() {
+        #expect(BrowserTarget.ObservationMode.dom.evidenceRequirement == .dom)
+        #expect(BrowserTarget.ObservationMode.image.evidenceRequirement == .image)
+        #expect(BrowserTarget.ObservationMode.domAndImage.evidenceRequirement == .domAndImage)
+    }
+
     private var fixtureTarget: HookTarget {
         .window(
             WindowTarget(

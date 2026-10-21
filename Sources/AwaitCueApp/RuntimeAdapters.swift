@@ -58,14 +58,14 @@ struct AppConditionEvidenceProvider: HookRuntimeConditionEvidenceProvider {
             case .unavailable:
                 throw HookRuntimeEvidenceError.targetUnavailable
             }
-        case .browser:
+        case let .browser(browser):
             let evidence = try await browserRelay.evidence(for: hook.id)
-            guard case let .condition(condition) = hook.trigger else {
+            guard case .condition = hook.trigger else {
                 throw HookRuntimeEvidenceError.evidenceIncomplete
             }
             let hasDOM = !(evidence.domText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
             let hasImage = evidence.image != nil
-            let isComplete = switch condition.requiredEvidence {
+            let isComplete = switch browser.observationMode.evidenceRequirement {
             case .dom: hasDOM
             case .image: hasImage
             case .domAndImage: hasDOM && hasImage

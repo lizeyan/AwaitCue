@@ -51,6 +51,15 @@ public protocol BrowserSelectionRelaying: Sendable {
     func resolveBrowserTarget(
         for selection: ResolvedWindowSelection
     ) async throws -> BrowserSelectionRelayResolution
+
+    /// 返回刚完成框选时由具体标签页提取的区域 DOM；实现方只需短暂保留到创建窗口出现。
+    func previewDOMText(for target: BrowserTarget) async -> String?
+}
+
+public extension BrowserSelectionRelaying {
+    func previewDOMText(for target: BrowserTarget) async -> String? {
+        nil
+    }
 }
 
 /// 收集操作系统验证过 browser bundle 的选择响应，并拒绝跨浏览器或多 installation 歧义。

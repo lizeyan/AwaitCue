@@ -1,10 +1,14 @@
-import { EvidenceObserver } from "./domEvidence";
+import { collectEvidence, EvidenceObserver } from "./domEvidence";
 import { normalizeSelectionToViewport } from "./browserSelection";
 import type { NormalizedRegion, ScreenRect } from "./protocol";
 
 type BindMessage = Readonly<{ type: "awaitcue.bind"; hookID: string; region: NormalizedRegion }>;
 type UnbindMessage = Readonly<{ type: "awaitcue.unbind"; hookID: string }>;
-type ResolveSelectionMessage = Readonly<{ type: "awaitcue.resolveSelection"; selectionRect: ScreenRect }>;
+type ResolveSelectionMessage = Readonly<{
+  type: "awaitcue.resolveSelection";
+  requestID: string;
+  selectionRect: ScreenRect;
+}>;
 
 type AwaitCueContentState = {
   observers: Map<string, EvidenceObserver>;
@@ -50,7 +54,8 @@ if (!state.listenerInstalled) {
         matched: region !== null,
         region,
         url: document.location.href,
-        title: document.title
+        title: document.title,
+        evidence: region ? collectEvidence(document, message.requestID, region) : null
       });
     }
     return false;
@@ -67,7 +72,10 @@ function isUnbindMessage(value: unknown): value is UnbindMessage {
 }
 
 function isResolveSelectionMessage(value: unknown): value is ResolveSelectionMessage {
-  return isRecord(value) && value.type === "awaitcue.resolveSelection" && isRecord(value.selectionRect);
+  return isRecord(value)
+    && value.type === "awaitcue.resolveSelection"
+    && typeof value.requestID === "string"
+    && isRecord(value.selectionRect);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

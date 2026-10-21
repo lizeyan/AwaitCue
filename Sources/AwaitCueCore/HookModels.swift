@@ -56,6 +56,15 @@ public struct BrowserTarget: Codable, Equatable, Sendable {
         case dom
         case image
         case domAndImage
+
+        /// 将 Target 的观察能力转换为每次模型判断必须具备的证据组合。
+        public var evidenceRequirement: EvidenceRequirement {
+            switch self {
+            case .dom: .dom
+            case .image: .image
+            case .domAndImage: .domAndImage
+            }
+        }
     }
 
     public let browserBundleIdentifier: String

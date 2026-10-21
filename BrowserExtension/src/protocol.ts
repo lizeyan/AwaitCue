@@ -106,6 +106,7 @@ export type ExtensionEvent =
         url: string;
         title: string;
         region: NormalizedRegion;
+        evidence?: Evidence;
       }>;
     }>
   | Readonly<{

@@ -256,6 +256,7 @@ async function resolveSelection(command: Extract<NativeCommand, { type: "resolve
   await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
   const response: unknown = await chrome.tabs.sendMessage(tab.id, {
     type: "awaitcue.resolveSelection",
+    requestID: command.requestID,
     selectionRect: command.selectionRect
   });
   if (!isResolvedSelectionResponse(response)) {
@@ -276,7 +277,8 @@ async function resolveSelection(command: Extract<NativeCommand, { type: "resolve
       host: url.host,
       url: tabURL,
       title: response.title || tab.title || url.host,
-      region: response.region
+      region: response.region,
+      ...(response.evidence ? { evidence: response.evidence } : {})
     }
   });
 }
@@ -454,11 +456,13 @@ function isResolvedSelectionResponse(value: unknown): value is {
   matched: boolean;
   region?: NormalizedRegion;
   title: string;
+  evidence?: Evidence;
 } {
   return (
     isRecord(value) &&
     typeof value.matched === "boolean" &&
     typeof value.title === "string" &&
-    (value.region === null || value.region === undefined || isNormalizedRegion(value.region))
+    (value.region === null || value.region === undefined || isNormalizedRegion(value.region)) &&
+    (value.evidence === null || value.evidence === undefined || isEvidence(value.evidence))
   );
 }
