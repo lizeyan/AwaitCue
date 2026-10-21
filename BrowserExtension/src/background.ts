@@ -122,6 +122,10 @@ chrome.tabs.onUpdated.addListener((tabID, changeInfo, tab) => {
   }
 });
 
+// Manifest V3 worker 可能在浏览器仍运行时被回收并重新创建；这种冷启动不会再次触发 onStartup。
+// 每次脚本求值都主动连接，connectNative 自身会阻止同一个 worker 内重复创建 native port。
+connectNative();
+
 function connectNative(): void {
   if (nativePort) return;
   if (reconnectTimer !== null) {

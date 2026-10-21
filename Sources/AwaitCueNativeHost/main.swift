@@ -45,10 +45,11 @@ struct AwaitCueNativeHostMain {
         to client: NativeBridgeClient,
         browserBundleIdentifier: String
     ) async throws {
+        let inputReader = FileDescriptorChunkReader(fileDescriptor: STDIN_FILENO)
         var decoder = NativeMessagingFrameDecoder(
             maximumMessageSize: NativeMessagingFrameCodec.maximumIncomingMessageSize
         )
-        while let chunk = try FileHandle.standardInput.read(upToCount: 65_536), !chunk.isEmpty {
+        while let chunk = try inputReader.readChunk(maximumCount: 65_536), !chunk.isEmpty {
             for payload in try decoder.append(chunk) {
                 try await client.sendPayload(
                     try payloadByAddingBrowserIdentity(
