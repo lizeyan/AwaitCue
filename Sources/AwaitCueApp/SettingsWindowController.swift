@@ -4,11 +4,19 @@ import SwiftUI
 /// 自主管理设置窗口，确保菜单栏 agent 每次请求都能激活并置前，而不是只创建隐藏的 Settings scene。
 @MainActor
 final class SettingsWindowController: NSObject, ObservableObject, NSWindowDelegate {
-    private weak var model: AwaitCueApplicationModel?
+    private let rootView: () -> AnyView
     private var windowController: NSWindowController?
 
     init(model: AwaitCueApplicationModel) {
-        self.model = model
+        rootView = { [weak model] in
+            guard let model else { return AnyView(EmptyView()) }
+            return AnyView(AwaitCueSettingsView(model: model))
+        }
+    }
+
+    /// 注入真实 SwiftUI 内容但隔离进程级依赖，供窗口服务器端到端测试使用。
+    init(rootView: @escaping () -> AnyView) {
+        self.rootView = rootView
     }
 
     /// 同一时间只保留一个设置窗口；已存在时恢复最小化状态并带到前台。
@@ -17,10 +25,8 @@ final class SettingsWindowController: NSObject, ObservableObject, NSWindowDelega
             activate(window)
             return
         }
-        guard let model else { return }
-
         let hostingController = NSHostingController(
-            rootView: AwaitCueSettingsView(model: model)
+            rootView: rootView()
                 .frame(minWidth: 720, minHeight: 520)
         )
         let window = NSWindow(

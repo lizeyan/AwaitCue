@@ -64,6 +64,7 @@ function makeBackgroundFixture() {
     nativeMessages,
     nativePort,
     scriptingExecuteScript,
+    tabsGet,
     tabsSendMessage,
     windowsGetAll
   };
@@ -103,6 +104,43 @@ describe("background service worker startup", () => {
 
     expect(fixture.connectNative).toHaveBeenCalledTimes(1);
     expect(fixture.connectNative).toHaveBeenCalledWith("org.awaitcue.native");
+  });
+
+  it("reconnects after the native host disconnects", async () => {
+    vi.useFakeTimers();
+    const fixture = makeBackgroundFixture();
+    await import("../src/background");
+    const disconnect = fixture.nativePort.onDisconnect.listeners[0] as () => void;
+
+    disconnect();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(fixture.connectNative).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it("marks a restored Hook unavailable when its exact tab no longer exists", async () => {
+    const fixture = makeBackgroundFixture();
+    fixture.tabsGet.mockRejectedValue(new Error("No tab with id: 7"));
+    await import("../src/background");
+    const listener = fixture.nativeMessages.listeners[0] as (message: unknown) => void;
+
+    listener({
+      type: "bindTarget",
+      extensionInstallationID: "installation-1",
+      hookID: "hook-1",
+      tabID: 7,
+      expectedHost: "build.example",
+      expectedURL: "https://build.example/job",
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      requirePixels: false
+    });
+
+    await vi.waitFor(() => {
+      expect(fixture.nativePort.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "targetUnavailable", hookID: "hook-1" })
+      );
+    });
   });
 
   it("reports when no Chromium window matches the native frame", async () => {

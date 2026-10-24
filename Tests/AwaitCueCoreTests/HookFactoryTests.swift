@@ -98,6 +98,31 @@ struct HookFactoryTests {
         #expect(BrowserTarget.ObservationMode.domAndImage.evidenceRequirement == .domAndImage)
     }
 
+    @Test("浏览器扩展安装入口覆盖受支持浏览器并使用稳定身份")
+    func browserExtensionInstallDestinationsAreStable() {
+        #expect(BrowserExtensionFamily.allCases.map(\.displayName) == [
+            "Google Chrome",
+            "Microsoft Edge",
+            "Arc",
+            "Chromium",
+        ])
+        #expect(BrowserExtensionFamily.chrome.bundleIdentifier == "com.google.Chrome")
+        #expect(BrowserExtensionFamily.edge.managementURL.absoluteString == "edge://extensions/")
+        #expect(BrowserExtensionFamily.arc.managementURL.absoluteString == "chrome://extensions/")
+        #expect(
+            BrowserExtensionDistribution.releaseDownloadURL.absoluteString
+                == "https://github.com/lizeyan/AwaitCue/releases/latest"
+        )
+        #expect(
+            SystemSettingsDestination.screenRecording.url.absoluteString
+                == "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        )
+        #expect(
+            SystemSettingsDestination.notifications.url.absoluteString
+                == "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+        )
+    }
+
     private var fixtureTarget: HookTarget {
         .window(
             WindowTarget(

@@ -25,6 +25,8 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
       - name: Build with warnings as errors
         run: swift build -Xswiftc -warnings-as-errors
+      - name: Run macOS AppKit end-to-end behavior tests
+        run: ./Scripts/run-macos-e2e.sh
       - name: Run Swift coverage gate
         run: ./Scripts/swift-coverage.sh
       - name: Build application bundle
@@ -70,6 +72,20 @@ jobs:
           path: BrowserExtension/dist
           if-no-files-found: error
 
+  benchmark:
+    name: Decision benchmark fixtures and scoring
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Test benchmark scoring and contracts
+        run: node --test Benchmarks/Decision/tests/*.test.mjs
+      - name: Validate fixed benchmark corpus
+        run: node Scripts/run-decision-benchmark.mjs --dry-run
+
   policy:
     name: Repository policy
     runs-on: ubuntu-24.04
@@ -84,15 +100,17 @@ jobs:
   gate:
     name: CI gate
     if: always()
-    needs: [swift, extension, policy]
+    needs: [swift, extension, benchmark, policy]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every CI job
         env:
           SWIFT_RESULT: ${{ needs.swift.result }}
           EXTENSION_RESULT: ${{ needs.extension.result }}
+          BENCHMARK_RESULT: ${{ needs.benchmark.result }}
           POLICY_RESULT: ${{ needs.policy.result }}
         run: |
           test "${SWIFT_RESULT}" = success
           test "${EXTENSION_RESULT}" = success
+          test "${BENCHMARK_RESULT}" = success
           test "${POLICY_RESULT}" = success

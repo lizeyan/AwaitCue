@@ -24,8 +24,8 @@ export function collectEvidence(
     const node = walker.currentNode;
     const parent = node.parentElement;
     if (!parent || ignoredTextParentTags.has(parent.tagName)) continue;
-    const style = document.defaultView?.getComputedStyle(parent);
-    if (style?.display === "none" || style?.visibility === "hidden") continue;
+    // checkVisibility 由浏览器原生判断继承的 CSS 可见性，避免逐节点 getComputedStyle 触发布局计算。
+    if (!isElementVisible(parent)) continue;
     const text = normalizeText(node.nodeValue ?? "");
     if (!text) continue;
     const range = document.createRange();
@@ -143,4 +143,15 @@ export function fingerprint(value: string): string {
 
 function normalizeText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function isElementVisible(element: HTMLElement): boolean {
+  if (element.hidden || element.closest("[hidden]")) return false;
+  if (typeof element.checkVisibility === "function") {
+    return element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+  }
+  // jsdom 等测试环境没有 checkVisibility；覆盖最常见的内联隐藏方式，不把测试替身变成性能瓶颈。
+  return element.style.display !== "none"
+    && element.style.visibility !== "hidden"
+    && element.style.opacity !== "0";
 }

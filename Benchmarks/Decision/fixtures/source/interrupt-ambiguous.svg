@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <rect width="800" height="450" fill="#dfe6ee"/>
+  <text x="38" y="52" font-family="-apple-system, sans-serif" font-size="24" font-weight="700" fill="#344054">Desktop overview</text>
+  <rect x="38" y="82" width="350" height="292" rx="18" fill="#111827" stroke="#fff" stroke-width="4"/>
+  <text x="66" y="128" font-family="Menlo, monospace" font-size="18" fill="#93c5fd">Editor</text>
+  <text x="66" y="172" font-family="Menlo, monospace" font-size="16" fill="#e5e7eb">let status = await fetch()</text>
+  <text x="66" y="208" font-family="Menlo, monospace" font-size="16" fill="#e5e7eb">// paused</text>
+  <rect x="412" y="82" width="350" height="292" rx="18" fill="#fffdf8" stroke="#fff" stroke-width="4"/>
+  <text x="440" y="128" font-family="Georgia, serif" font-size="20" fill="#6f6253">Article</text>
+  <text x="440" y="172" font-family="Georgia, serif" font-size="25" fill="#302a24">Designing quiet software</text>
+  <text x="440" y="214" font-family="Georgia, serif" font-size="17" fill="#6f6253">Reading progress: 43%</text>
+  <text x="38" y="418" font-family="-apple-system, sans-serif" font-size="18" fill="#667085">No active window can be identified from this overview.</text>
+</svg>

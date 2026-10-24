@@ -1,0 +1,9 @@
+Page title: Release pipeline
+[606,90] FAILED
+[82,145] CN production branch
+[107,211] class:status-success
+[150,205] Full deployment
+[150,238] Completed · 6m 19s
+[107,333] class:status-failed
+[150,327] Unrelated SG validation
+[150,360] Failed after CN deployment completed

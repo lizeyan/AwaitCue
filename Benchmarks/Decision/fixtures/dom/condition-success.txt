@@ -1,0 +1,6 @@
+Page title: Deployment pipeline
+Selected region:
+[132,222] class:status-success
+[190,215] DEPLOYMENT SUCCEEDED
+[190,259] All production instances are healthy.
+[104,334] Finished 14:32 · Duration 6m 19s

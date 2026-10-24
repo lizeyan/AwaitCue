@@ -80,6 +80,27 @@ npm --prefix BrowserExtension ci
 npm --prefix BrowserExtension run coverage
 ```
 
+Run the AppKit end-to-end window behavior tests:
+
+```bash
+./Scripts/run-macos-e2e.sh
+```
+
+On a local Mac whose terminal has Accessibility permission, the optional live layer exercises the real global shortcut, rectangle selection, TextEdit Target, close/reopen behavior, and an available Chromium Target without modifying TCC records:
+
+```bash
+./Scripts/run-macos-e2e.sh --live
+```
+
+Validate the fixed Decision benchmark corpus and scoring contract:
+
+```bash
+node --test Benchmarks/Decision/tests/*.test.mjs
+node Scripts/run-decision-benchmark.mjs --dry-run
+```
+
+Live model quality runs are deliberately separate from required PR CI because they use a user-selected external provider and consume tokens. See [Benchmarks/Decision/README.md](Benchmarks/Decision/README.md) for the labeled corpus, accuracy/stability gates, and the manual GitHub Actions workflow.
+
 `Scripts/package-release.sh` gives local ad-hoc builds a stable identifier-based designated requirement so macOS TCC permissions survive rebuilds. If you previously authorized a hash-based development build, remove its old Screen Recording entry and add the newly packaged app once.
 
 Install the native host manifest for an unpacked Chromium extension:
@@ -89,6 +110,16 @@ AWAITCUE_CHROME_EXTENSION_ID=<chrome-id> \
 AWAITCUE_ARC_EXTENSION_ID=<arc-id> \
 ./Scripts/install-native-host.sh /Applications/AwaitCue.app
 ```
+
+The macOS settings window also links to the latest GitHub Release and opens the extension-management page of an installed Chrome, Edge, Arc, or Chromium app. Silent extension installation is not available to ordinary macOS apps; the user must confirm installation through the browser or load the unpacked release while the store listing is pending.
+
+Build the audited, deterministic Chrome Web Store archive:
+
+```bash
+npm --prefix BrowserExtension run package:store
+```
+
+Submission requirements, permission justifications, listing copy, and remaining external dashboard steps are tracked in [docs/chrome-web-store-readiness.md](docs/chrome-web-store-readiness.md). The public policy source is [docs/privacy-policy.md](docs/privacy-policy.md).
 
 Unpacked extension IDs can differ by browser and profile, so the installer accepts a separate ID for Chrome, Edge, Chromium, and Arc. The native host only relays messages while the AwaitCue menu bar app is running and has published a private loopback token.
 

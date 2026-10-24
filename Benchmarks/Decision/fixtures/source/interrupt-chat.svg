@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450">
+  <rect width="800" height="450" fill="#f3f4f6"/><rect x="72" y="30" width="656" height="390" rx="18" fill="#fff" stroke="#d1d5db"/>
+  <text x="110" y="80" font-family="-apple-system,sans-serif" font-size="25" font-weight="700">Team chat</text><text x="610" y="80" font-family="-apple-system,sans-serif" font-size="16" fill="#16a34a">Online</text>
+  <rect x="110" y="116" width="430" height="70" rx="18" fill="#f3f4f6"/><text x="132" y="145" font-family="-apple-system,sans-serif" font-size="16" fill="#6b7280">Mina · 10:42</text><text x="132" y="171" font-family="-apple-system,sans-serif" font-size="19">The release notes look good to me.</text>
+  <rect x="245" y="212" width="420" height="70" rx="18" fill="#dbeafe"/><text x="267" y="241" font-family="-apple-system,sans-serif" font-size="16" fill="#6b7280">You · 10:44</text><text x="267" y="267" font-family="-apple-system,sans-serif" font-size="19">Thanks, I’m just reading the thread.</text>
+  <rect x="110" y="335" width="555" height="48" rx="14" fill="#fff" stroke="#d1d5db"/><text x="132" y="366" font-family="-apple-system,sans-serif" font-size="18" fill="#9ca3af">No draft message · conversation idle</text>
+</svg>

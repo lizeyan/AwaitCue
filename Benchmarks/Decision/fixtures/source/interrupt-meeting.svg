@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450">
+  <rect width="800" height="450" fill="#111827"/><rect x="24" y="24" width="752" height="402" rx="20" fill="#1f2937"/>
+  <rect x="48" y="58" width="470" height="304" rx="16" fill="#334155"/><circle cx="283" cy="170" r="62" fill="#64748b"/><circle cx="283" cy="147" r="23" fill="#cbd5e1"/><path d="M235 227c10-48 86-48 96 0" fill="#cbd5e1"/>
+  <text x="192" y="331" font-family="-apple-system,sans-serif" font-size="22" fill="#fff">Design review host</text><rect x="542" y="58" width="210" height="142" rx="14" fill="#334155"/><text x="580" y="136" font-family="-apple-system,sans-serif" font-size="20" fill="#fff">3 participants</text>
+  <circle cx="579" cy="391" r="24" fill="#dc2626"/><text x="620" y="399" font-family="-apple-system,sans-serif" font-size="21" fill="#fff">Meeting in progress · 18:42</text>
+</svg>

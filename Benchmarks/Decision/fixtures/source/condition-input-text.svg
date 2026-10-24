@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450">
+  <rect width="800" height="450" fill="#f5f7fa"/><rect x="78" y="42" width="644" height="366" rx="20" fill="#fff" stroke="#cbd5e1" stroke-width="3"/>
+  <text x="116" y="100" font-family="-apple-system,sans-serif" font-size="27" font-weight="700">Create monitor</text><text x="116" y="145" font-family="-apple-system,sans-serif" font-size="18" fill="#64748b">Condition text</text>
+  <rect x="116" y="164" width="568" height="66" rx="10" fill="#fff" stroke="#2563eb" stroke-width="3"/><text x="138" y="205" font-family="-apple-system,sans-serif" font-size="24">Deployment succeeded</text>
+  <text x="116" y="277" font-family="-apple-system,sans-serif" font-size="18" fill="#64748b">Observed target status</text><rect x="116" y="294" width="568" height="68" rx="10" fill="#fff7ed" stroke="#fdba74"/>
+  <circle cx="148" cy="328" r="13" fill="#f59e0b"/><text x="176" y="337" font-family="-apple-system,sans-serif" font-size="23" fill="#9a3412">Waiting for deployment to start</text>
+</svg>

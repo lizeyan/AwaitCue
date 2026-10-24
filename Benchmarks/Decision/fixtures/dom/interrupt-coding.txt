@@ -1,0 +1,7 @@
+Page title: Production incident debugging
+Selected region:
+[50,68] PRODUCTION INCIDENT · debugging active
+[74,184] breakpoint · request is timing out here
+[62,290] swift test --filter IncidentRegression
+[62,326] Tests running… 18/42
+[62,362] 3 failures · live traffic affected

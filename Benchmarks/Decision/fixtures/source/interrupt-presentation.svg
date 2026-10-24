@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450">
+  <rect width="800" height="450" fill="#050816"/><rect x="58" y="38" width="684" height="360" rx="18" fill="#fff"/>
+  <text x="100" y="100" font-family="-apple-system,sans-serif" font-size="22" fill="#7c3aed">QUARTERLY REVIEW</text><text x="100" y="164" font-family="-apple-system,sans-serif" font-size="44" font-weight="700" fill="#111827">Reliability roadmap</text>
+  <rect x="100" y="210" width="500" height="20" rx="10" fill="#ddd6fe"/><rect x="100" y="210" width="370" height="20" rx="10" fill="#7c3aed"/><text x="100" y="284" font-family="-apple-system,sans-serif" font-size="25" fill="#374151">Presenting full screen</text><text x="100" y="330" font-family="-apple-system,sans-serif" font-size="20" fill="#6b7280">Slide 8 of 12 · Screen sharing active</text>
+  <rect x="625" y="312" width="80" height="42" rx="21" fill="#dc2626"/><text x="646" y="340" font-family="-apple-system,sans-serif" font-size="18" fill="#fff">LIVE</text>
+</svg>

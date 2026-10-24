@@ -5,6 +5,7 @@ import AwaitCueCore
 public protocol HookCreationPresenting: AnyObject {
     func present()
     func dismiss()
+    func presentFailure(message: String)
 }
 
 /// 保证 pending target 与创建窗口按固定顺序一起变化。
@@ -30,6 +31,11 @@ public final class HookCreationPresentationCoordinator {
     /// 已经存在未完成创建时，不允许新框选覆盖它。
     public func presentExisting() {
         presenter?.present()
+    }
+
+    /// Target 无法可靠建立时立即展示原因，不能要求用户事后打开菜单寻找错误。
+    public func selectionFailed(message: String) {
+        presenter?.presentFailure(message: message)
     }
 
     /// 先清理业务状态，再关闭承载表单的窗口。
