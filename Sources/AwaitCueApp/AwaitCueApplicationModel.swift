@@ -239,7 +239,9 @@ final class AwaitCueApplicationModel: ObservableObject {
             return
         }
         guard screenCapturePermissionGranted || requestScreenCapturePermission() else {
-            startupError = "需要屏幕录制权限才能冻结屏幕并观察框选目标。授权后请重新启动 AwaitCue。"
+            let message = "需要屏幕录制权限才能冻结屏幕并观察框选目标。授权后请重新启动 AwaitCue。"
+            startupError = message
+            hookCreationPresentationCoordinator.selectionFailed(message: message)
             return
         }
         isSelectingTarget = true
@@ -256,7 +258,9 @@ final class AwaitCueApplicationModel: ObservableObject {
                 pendingInitialEvidence = evidence
             }
         } catch {
-            startupError = Self.userFacingMessage(for: error)
+            let message = Self.userFacingMessage(for: error)
+            startupError = message
+            hookCreationPresentationCoordinator.selectionFailed(message: message)
         }
     }
 

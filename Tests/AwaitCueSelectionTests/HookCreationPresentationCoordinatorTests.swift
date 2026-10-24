@@ -45,6 +45,17 @@ struct HookCreationPresentationCoordinatorTests {
         #expect(presenter.events == ["clear", "dismiss"])
     }
 
+    @Test("框选失败会立即展示用户可见原因")
+    func selectionFailurePresentsReason() {
+        let presenter = PresenterSpy()
+        let coordinator = HookCreationPresentationCoordinator()
+        coordinator.attach(presenter)
+
+        coordinator.selectionFailed(message: "框选必须位于网页内容区域内。")
+
+        #expect(presenter.events == ["failure:框选必须位于网页内容区域内。"])
+    }
+
     private var fixtureTarget: HookTarget {
         .window(
             WindowTarget(
@@ -67,5 +78,9 @@ private final class PresenterSpy: HookCreationPresenting {
 
     func dismiss() {
         events.append("dismiss")
+    }
+
+    func presentFailure(message: String) {
+        events.append("failure:\(message)")
     }
 }

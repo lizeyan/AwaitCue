@@ -79,5 +79,9 @@ let package = Package(
         .testTarget(name: "AwaitCuePersistenceTests", dependencies: ["AwaitCuePersistence", "AwaitCueCore"]),
         .testTarget(name: "AwaitCueBrowserBridgeTests", dependencies: ["AwaitCueBrowserBridge", "AwaitCueCore"]),
         .testTarget(name: "AwaitCueRuntimeTests", dependencies: ["AwaitCueRuntime", "AwaitCueCore", "AwaitCueModel"]),
+        .testTarget(
+            name: "AwaitCueAppE2ETests",
+            dependencies: ["AwaitCueApp", "AwaitCueCore", "AwaitCueSelection"]
+        ),
     ]
 )
