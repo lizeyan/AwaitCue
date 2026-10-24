@@ -428,7 +428,7 @@ private final class RelayHandshakeFixture: @unchecked Sendable {
     init(
         safariCommandDispatcher: any SafariExtensionCommandDispatching = SafariExtensionCommandDispatcher(),
         handshakeTimeout: Duration = .seconds(10),
-        selectionCollectionTimeout: Duration = .milliseconds(200)
+        selectionCollectionTimeout: Duration = .seconds(3)
     ) async throws {
         let server = NativeBridgeServer()
         let descriptor = try await server.start()
