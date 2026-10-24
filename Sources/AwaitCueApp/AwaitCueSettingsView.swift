@@ -4,6 +4,7 @@ import SwiftUI
 struct AwaitCueSettingsView: View {
     private enum SettingsSection: String, CaseIterable, Identifiable {
         case model
+        case browser
         case privacy
 
         var id: Self { self }
@@ -11,6 +12,7 @@ struct AwaitCueSettingsView: View {
         var title: String {
             switch self {
             case .model: "模型"
+            case .browser: "浏览器"
             case .privacy: "隐私"
             }
         }
@@ -18,6 +20,7 @@ struct AwaitCueSettingsView: View {
         var subtitle: String {
             switch self {
             case .model: "连接 OpenAI Responses API 兼容的图片模型。"
+            case .browser: "安装并检查 Chrome、Edge、Arc 或 Chromium 扩展。"
             case .privacy: "管理本地截图权限、浏览器连接和排除规则。"
             }
         }
@@ -25,6 +28,7 @@ struct AwaitCueSettingsView: View {
         var systemImage: String {
             switch self {
             case .model: "brain"
+            case .browser: "puzzlepiece.extension"
             case .privacy: "hand.raised"
             }
         }
@@ -57,6 +61,8 @@ struct AwaitCueSettingsView: View {
                 switch selectedSection {
                 case .model:
                     modelSettings
+                case .browser:
+                    browserSettings
                 case .privacy:
                     privacySettings
                 }
@@ -65,6 +71,46 @@ struct AwaitCueSettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 720, minHeight: 520)
+    }
+
+    private var browserSettings: some View {
+        Form {
+            Section("连接状态") {
+                LabeledContent("Native relay") {
+                    Text(model.browserBridgeStatus)
+                }
+            }
+
+            Section {
+                Button("下载最新扩展包…") {
+                    model.openBrowserExtensionDownload()
+                }
+                ForEach(BrowserExtensionFamily.allCases, id: \.self) { family in
+                    LabeledContent(family.displayName) {
+                        if model.isBrowserInstalled(family) {
+                            Button("打开扩展管理") {
+                                model.openBrowserExtensionManagement(family)
+                            }
+                        } else {
+                            Text("未安装")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text("安装与管理")
+            } footer: {
+                Text("Chrome Web Store 版本发布前，请从 GitHub Release 下载扩展包，并在目标浏览器的扩展管理页启用开发者模式后加载。Chrome、Edge、Arc 和 Chromium 使用同一扩展构建。")
+            }
+
+            if let error = model.setupActionError {
+                Section("操作失败") {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .formStyle(.grouped)
     }
 
     private var modelSettings: some View {
@@ -125,13 +171,23 @@ struct AwaitCueSettingsView: View {
                 Text("仅内存处理，不落盘")
             }
             LabeledContent("屏幕录制权限") {
-                if model.screenCapturePermissionGranted {
-                    Label("已允许", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                } else {
-                    Button("请求权限") {
-                        model.requestScreenCapturePermission()
+                HStack {
+                    if model.screenCapturePermissionGranted {
+                        Label("已允许", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("请求权限") {
+                            model.requestScreenCapturePermission()
+                        }
                     }
+                    Button("打开系统设置") {
+                        model.openSystemSettings(.screenRecording)
+                    }
+                }
+            }
+            LabeledContent("通知权限") {
+                Button("打开系统设置") {
+                    model.openSystemSettings(.notifications)
                 }
             }
             LabeledContent("遥测与崩溃上报") {
@@ -192,6 +248,10 @@ struct AwaitCueSettingsView: View {
                 }
             } message: {
                 Text("这会删除所有 Hook、模型 API key 和待发送通知，无法撤销。")
+            }
+            if let error = model.setupActionError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
             }
         }
         .formStyle(.grouped)

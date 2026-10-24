@@ -35,6 +35,7 @@ final class AwaitCueApplicationModel: ObservableObject {
         didSet { persistPrivacyExclusionConfiguration() }
     }
     @Published private(set) var browserBridgeStatus = "等待扩展连接"
+    @Published private(set) var setupActionError: String?
     @Published var pendingTarget: HookTarget?
     @Published private(set) var isSelectingTarget = false
     @Published private(set) var screenCapturePermissionGranted = CGPreflightScreenCaptureAccess()
@@ -114,6 +115,49 @@ final class AwaitCueApplicationModel: ObservableObject {
 
     var apiHostname: String? {
         URL(string: modelBaseURL)?.host
+    }
+
+    func isBrowserInstalled(_ family: BrowserExtensionFamily) -> Bool {
+        NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: family.bundleIdentifier
+        ) != nil
+    }
+
+    /// 用指定浏览器打开自身扩展管理页，避免 custom scheme 被错误交给默认浏览器。
+    func openBrowserExtensionManagement(_ family: BrowserExtensionFamily) {
+        setupActionError = nil
+        guard let applicationURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: family.bundleIdentifier
+        ) else {
+            setupActionError = "未找到 \(family.displayName)。"
+            return
+        }
+        NSWorkspace.shared.open(
+            [family.managementURL],
+            withApplicationAt: applicationURL,
+            configuration: NSWorkspace.OpenConfiguration()
+        ) { [weak self] _, error in
+            guard let error else { return }
+            Task { @MainActor in
+                self?.setupActionError = "无法打开 \(family.displayName) 扩展管理页：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    func openBrowserExtensionDownload() {
+        setupActionError = nil
+        guard NSWorkspace.shared.open(BrowserExtensionDistribution.releaseDownloadURL) else {
+            setupActionError = "无法打开 AwaitCue 扩展下载页。"
+            return
+        }
+    }
+
+    func openSystemSettings(_ destination: SystemSettingsDestination) {
+        setupActionError = nil
+        guard NSWorkspace.shared.open(destination.url) else {
+            setupActionError = "无法打开对应的 macOS 系统设置。"
+            return
+        }
     }
 
     /// 恢复本地 Hook，并请求系统通知权限。
