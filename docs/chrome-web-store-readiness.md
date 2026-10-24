@@ -12,7 +12,7 @@ This document is the submission checklist and reviewer-facing disclosure draft f
 | Remote hosted code | Ready | Store package contains only bundled JS/HTML/images; audit rejects remote scripts, `eval`, `new Function`, source maps, and extra files. |
 | Deterministic ZIP | Ready | `npm run package:store` produces `dist/awaitcue-chromium-0.1.0.zip`; repeated packaging is byte-identical. |
 | Package icon | Ready | 16, 32, 48, and 128 px PNG icons are included. |
-| Privacy disclosure | Draft ready; public URL blocked | Copy below is ready, but it must be published at a stable public HTTPS URL before submission. |
+| Privacy disclosure | Ready after merge | `docs/privacy-policy.md` is complete; use the public GitHub HTTPS URL after this change reaches `master`. |
 | Store screenshots | Blocked on final product capture | At least one 1280×800 or 640×400 current-product screenshot must be uploaded. |
 | Developer account | External blocker | Publisher account, contact email, fee, and 2-Step Verification must be completed in the Chrome Web Store dashboard. |
 
@@ -70,7 +70,15 @@ Publish this statement on the AwaitCue website or privacy-policy page:
 
 > The use of information received from Google APIs will adhere to the Chrome Web Store User Data Policy, including the Limited Use requirements.
 
-## Privacy policy outline to publish
+## Published privacy policy
+
+Use this public URL after the policy reaches `master`:
+
+> https://github.com/lizeyan/AwaitCue/blob/master/docs/privacy-policy.md
+
+The policy source is `docs/privacy-policy.md` and covers the following required points.
+
+## Privacy policy coverage
 
 The public privacy policy should state, in plain language:
 
