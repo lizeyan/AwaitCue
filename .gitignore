@@ -9,6 +9,13 @@ coverage/
 
 BrowserExtension/node_modules/
 BrowserExtension/dist/
+SafariExtension/node_modules/
+SafariExtension/dist/
+SafariExtension/Xcode/**/xcuserdata/
+SafariExtension/Xcode/**/*Extension/GeneratedSources/
+SafariExtension/Xcode/**/*Extension/Resources/
+SafariExtension/Xcode/**/*Extension/SafariWebExtensionHandler.swift
+SafariExtension/Xcode/**/*Extension/AwaitCueSafariExtension.entitlements
 BrowserExtension/coverage/
 
 .env
