@@ -10,7 +10,7 @@ This document is the submission checklist and reviewer-facing disclosure draft f
 | Single purpose | Ready | The extension binds a user-selected page region to the AwaitCue macOS companion so that the region can be observed for a user-defined Condition. |
 | Permission minimization | Ready with disclosure | Removed `activeTab`, `tabs`, `tabCapture`, and `offscreen`; the remaining permissions are exercised by the DOM-only implementation. Broad HTTP/HTTPS host access remains necessary for macOS global selection without a preceding browser click. |
 | Remote hosted code | Ready | Store package contains only bundled JS and icons; audit rejects remote scripts, `eval`, `new Function`, source maps, and extra files. |
-| Deterministic ZIP | Ready | `npm run package:store` produces `dist/awaitcue-chromium-0.1.0.zip`; repeated packaging is byte-identical. |
+| Deterministic ZIP | Ready | `npm run package:store` produces a root-level store ZIP; `VERSION=0.2.3` also writes `0.2.3` into the packaged manifest, and repeated packaging is byte-identical. |
 | Package icon | Ready | 16, 32, 48, and 128 px PNG icons are included. |
 | Privacy disclosure | Ready after merge | `docs/privacy-policy.md` is complete; use the public GitHub HTTPS URL after this change reaches `master`. |
 | Store screenshots | Blocked on final product capture | At least one 1280×800 or 640×400 current-product screenshot must be uploaded. |
@@ -139,7 +139,12 @@ npm run typecheck
 npm test
 npm run coverage
 npm run package:store
+
+# Release build：文件名和 manifest.version 同时使用 0.2.3
+VERSION=0.2.3 npm run package:store
 ```
+
+`VERSION` 必须是 Chrome 接受的 1–4 段十进制版本（每段 0–65535、不能全为 0、不能带预发布后缀）；不合规的 tag 会在生成上传包前失败。
 
 The store package is written to:
 
@@ -155,6 +160,7 @@ Automated checks enforce:
 - no remote scripts or dynamic string execution;
 - exact package contents with `manifest.json` at ZIP root;
 - deterministic ZIP bytes;
+- Chrome-compatible release version and checkout paths containing spaces;
 - DOM evidence capped below the native-message budget;
 - large-DOM extraction performance;
 - unchanged-evidence suppression;

@@ -85,8 +85,9 @@ jobs:
           ./Scripts/notarize-release.sh
       - name: Build Chromium extension archive
         run: |
-          npm --prefix BrowserExtension run build
-          ditto -c -k --sequesterRsrc --keepParent BrowserExtension/dist "dist/AwaitCue-Chromium-${GITHUB_REF_NAME#v}.zip"
+          export VERSION="${GITHUB_REF_NAME#v}"
+          npm --prefix BrowserExtension run package:store
+          test -f "BrowserExtension/dist/awaitcue-chromium-${VERSION}.zip"
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -95,6 +96,6 @@ jobs:
           plain_version="${VERSION#v}"
           gh release create "${VERSION}" \
             "dist/AwaitCue-${plain_version}.dmg" \
-            "dist/AwaitCue-Chromium-${plain_version}.zip" \
+            "BrowserExtension/dist/awaitcue-chromium-${plain_version}.zip" \
             --generate-notes \
             --verify-tag

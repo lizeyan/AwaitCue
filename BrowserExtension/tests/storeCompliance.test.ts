@@ -1,7 +1,16 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import {
+  cpSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync
+} from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { basename, join, relative } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 
 const extensionRoot = process.cwd();
@@ -69,6 +78,67 @@ describe("Chrome Web Store package", () => {
     expect(entries[0]).toBe("background.js");
     expect(entries).toContain("manifest.json");
     expect(entries).not.toContain("dist/manifest.json");
+  });
+
+  it("puts the release version in the audited root-level store ZIP", () => {
+    const outputPath = execFileSync("node", ["scripts/package-store.mjs"], {
+      cwd: extensionRoot,
+      encoding: "utf8",
+      env: { ...process.env, VERSION: "0.2.3" }
+    }).trim();
+    const entries = execFileSync("/usr/bin/unzip", ["-Z1", outputPath], {
+      encoding: "utf8"
+    }).trim().split("\n");
+    const manifest = JSON.parse(execFileSync(
+      "/usr/bin/unzip",
+      ["-p", outputPath, "manifest.json"],
+      { encoding: "utf8" }
+    ));
+
+    expect(basename(outputPath)).toBe("awaitcue-chromium-0.2.3.zip");
+    expect(manifest.version).toBe("0.2.3");
+    expect(entries).toContain("manifest.json");
+    expect(entries.some((entry) => entry.startsWith("dist/"))).toBe(false);
+    expect(entries.some((entry) => entry.startsWith("__MACOSX/"))).toBe(false);
+  });
+
+  it("rejects versions that Chrome Web Store cannot install", () => {
+    for (const version of ["0.2.3-rc.1", "1.65536", "0.0", "01.2"]) {
+      const invalidOutput = join(
+        extensionRoot,
+        "dist",
+        `awaitcue-chromium-${version}.zip`
+      );
+
+      const result = spawnSync("node", ["scripts/package-store.mjs"], {
+        cwd: extensionRoot,
+        encoding: "utf8",
+        env: { ...process.env, VERSION: version }
+      });
+      expect(result.status).not.toBe(0);
+      expect(existsSync(invalidOutput)).toBe(false);
+    }
+  });
+
+  it("packages correctly when the checkout path contains spaces", () => {
+    const copiedRoot = mkdtempSync(join(tmpdir(), "AwaitCue Extension Test "));
+    try {
+      for (const entry of ["icons", "scripts", "src", "manifest.json", "package.json"]) {
+        cpSync(join(extensionRoot, entry), join(copiedRoot, entry), { recursive: true });
+      }
+      symlinkSync(join(extensionRoot, "node_modules"), join(copiedRoot, "node_modules"));
+
+      const outputPath = execFileSync("node", ["scripts/package-store.mjs"], {
+        cwd: copiedRoot,
+        encoding: "utf8",
+        env: { ...process.env, VERSION: "0.2.3" }
+      }).trim();
+
+      expect(existsSync(outputPath)).toBe(true);
+      expect(outputPath).toContain("AwaitCue Extension Test ");
+    } finally {
+      rmSync(copiedRoot, { recursive: true, force: true });
+    }
   });
 });
 

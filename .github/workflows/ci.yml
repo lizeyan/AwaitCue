@@ -34,6 +34,10 @@ jobs:
         run: swift build -Xswiftc -warnings-as-errors
       - name: Run macOS AppKit end-to-end behavior tests
         run: ./Scripts/run-macos-e2e.sh
+      - name: Test Chrome live-E2E fixture and loopback model
+        run: ./Scripts/test-chrome-e2e-fixture.sh
+      - name: Test Native Messaging clean install
+        run: ./Scripts/test-native-host-install.sh
       - name: Run Swift coverage gate
         run: ./Scripts/swift-coverage.sh
       - name: Build application bundle
@@ -47,7 +51,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: swift-coverage
-          path: coverage/swift.lcov
+          path: coverage/*.lcov
           if-no-files-found: error
 
   extension:
