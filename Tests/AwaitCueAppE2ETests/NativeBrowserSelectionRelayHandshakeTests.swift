@@ -438,7 +438,8 @@ private final class RelayHandshakeFixture: @unchecked Sendable {
             server: server,
             safariCommandDispatcher: safariCommandDispatcher,
             handshakeTimeout: handshakeTimeout,
-            selectionCollectionTimeout: selectionCollectionTimeout
+            selectionCollectionTimeout: selectionCollectionTimeout,
+            commandAcknowledgementTimeout: .seconds(1)
         )
 
         self.server = server

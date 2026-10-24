@@ -67,6 +67,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     private let safariCommandDispatcher: any SafariExtensionCommandDispatching
     private let handshakeTimeout: Duration
     private let selectionCollectionTimeout: Duration
+    private let commandAcknowledgementTimeout: Duration
     private let statusContinuation: AsyncStream<BrowserBridgeStatusUpdate>.Continuation
     private let evidenceUpdateContinuation: AsyncStream<HookID>.Continuation
     private let targetUnavailableContinuation: AsyncStream<HookID>.Continuation
@@ -86,12 +87,14 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         server: NativeBridgeServer,
         safariCommandDispatcher: any SafariExtensionCommandDispatching = SafariExtensionCommandDispatcher(),
         handshakeTimeout: Duration = .seconds(10),
-        selectionCollectionTimeout: Duration = .seconds(10)
+        selectionCollectionTimeout: Duration = .seconds(10),
+        commandAcknowledgementTimeout: Duration = .seconds(10)
     ) {
         self.server = server
         self.safariCommandDispatcher = safariCommandDispatcher
         self.handshakeTimeout = handshakeTimeout
         self.selectionCollectionTimeout = selectionCollectionTimeout
+        self.commandAcknowledgementTimeout = commandAcknowledgementTimeout
         // 浏览器页面可以高频变化；只保留有限最新事件，避免主线程暂时阻塞时积累敏感证据通知。
         let stream = AsyncStream<BrowserBridgeStatusUpdate>.makeStream(
             bufferingPolicy: .bufferingNewest(16)
@@ -171,7 +174,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             browserBundleIdentifier: target.browserBundleIdentifier
         )
         let payload = try JSONSerialization.data(withJSONObject: command)
-        let commandTimeout = selectionCollectionTimeout
+        let commandTimeout = commandAcknowledgementTimeout
         try await withCheckedThrowingContinuation { continuation in
             pendingBindings[requestID] = PendingBinding(
                 hookID: hookID,
@@ -563,7 +566,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         target: BrowserTarget
     ) async throws {
         let payload = try JSONSerialization.data(withJSONObject: command)
-        let commandTimeout = selectionCollectionTimeout
+        let commandTimeout = commandAcknowledgementTimeout
         try await withCheckedThrowingContinuation { continuation in
             pendingTargetCommands[requestID] = PendingTargetCommand(
                 hookID: hookID,
