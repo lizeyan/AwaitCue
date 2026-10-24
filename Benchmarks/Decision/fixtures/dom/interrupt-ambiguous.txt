@@ -1,0 +1,7 @@
+Page title: Desktop overview
+Selected region:
+[66,128] Editor
+[66,208] paused
+[440,128] Article
+[440,214] Reading progress: 43%
+[38,418] No active window can be identified from this overview.

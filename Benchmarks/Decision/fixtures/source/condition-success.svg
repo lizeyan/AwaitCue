@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <rect width="800" height="450" fill="#f6f8fa"/>
+  <rect x="64" y="54" width="672" height="342" rx="24" fill="#fff" stroke="#d0d7de" stroke-width="3"/>
+  <text x="104" y="118" font-family="-apple-system, sans-serif" font-size="28" fill="#24292f">Deployment pipeline</text>
+  <circle cx="132" cy="222" r="34" fill="#2da44e"/>
+  <path d="M116 222l11 11 23-26" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="190" y="215" font-family="-apple-system, sans-serif" font-size="34" font-weight="700" fill="#1f2328">DEPLOYMENT SUCCEEDED</text>
+  <text x="190" y="259" font-family="-apple-system, sans-serif" font-size="22" fill="#59636e">All production instances are healthy.</text>
+  <text x="104" y="334" font-family="-apple-system, sans-serif" font-size="20" fill="#656d76">Finished 14:32 · Duration 6m 19s</text>
+</svg>

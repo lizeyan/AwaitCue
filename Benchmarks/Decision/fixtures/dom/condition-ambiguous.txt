@@ -1,0 +1,7 @@
+Page title: Release dashboard
+Selected region:
+[102,110] Release dashboard
+[130,198] Production
+[130,250] No recent status
+[438,198] Last updated
+[438,250] Unknown

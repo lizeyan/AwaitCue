@@ -1,0 +1,6 @@
+Page title: Deployment pipeline
+Selected region:
+[132,222] class:status-running
+[190,215] DEPLOYMENT RUNNING
+[190,259] 62% complete · 18 instances remaining
+[104,316] role:progressbar aria-valuenow:62

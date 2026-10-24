@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <rect width="800" height="450" fill="#faf7f0"/>
+  <rect x="90" y="32" width="620" height="386" rx="18" fill="#fffdf8" stroke="#ded7ca" stroke-width="2"/>
+  <text x="132" y="92" font-family="Georgia, serif" font-size="20" fill="#8a7964">FIELD NOTES</text>
+  <text x="132" y="142" font-family="Georgia, serif" font-size="38" font-weight="700" fill="#302a24">Why city trees matter</text>
+  <text x="132" y="187" font-family="Georgia, serif" font-size="20" fill="#6f6253">A short guide to shade, air quality, and calmer streets.</text>
+  <line x1="132" y1="225" x2="668" y2="225" stroke="#ded7ca"/>
+  <text x="132" y="268" font-family="Georgia, serif" font-size="19" fill="#413a32">Tree canopies cool sidewalks and make long walks more comfortable.</text>
+  <text x="132" y="304" font-family="Georgia, serif" font-size="19" fill="#413a32">They also create small habitats throughout dense neighborhoods.</text>
+  <text x="132" y="364" font-family="Georgia, serif" font-size="16" fill="#8a7964">7 minute read · No audio playing</text>
+</svg>

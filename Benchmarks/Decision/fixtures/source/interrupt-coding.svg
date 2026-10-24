@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <rect width="800" height="450" fill="#111827"/>
+  <rect x="22" y="22" width="756" height="406" rx="14" fill="#0b1220" stroke="#334155" stroke-width="2"/>
+  <text x="50" y="68" font-family="Menlo, monospace" font-size="18" fill="#fca5a5">PRODUCTION INCIDENT · debugging active</text>
+  <text x="50" y="112" font-family="Menlo, monospace" font-size="18" fill="#93c5fd">func processRequest(_ request: Request) async throws {</text>
+  <text x="74" y="148" font-family="Menlo, monospace" font-size="18" fill="#e5e7eb">let result = try await database.execute(request)</text>
+  <text x="74" y="184" font-family="Menlo, monospace" font-size="18" fill="#fca5a5">// breakpoint · request is timing out here</text>
+  <text x="50" y="220" font-family="Menlo, monospace" font-size="18" fill="#93c5fd">}</text>
+  <rect x="42" y="250" width="716" height="150" rx="10" fill="#020617"/>
+  <text x="62" y="290" font-family="Menlo, monospace" font-size="17" fill="#f8fafc">$ swift test --filter IncidentRegression</text>
+  <text x="62" y="326" font-family="Menlo, monospace" font-size="17" fill="#fbbf24">Tests running… 18/42</text>
+  <text x="62" y="362" font-family="Menlo, monospace" font-size="17" fill="#f87171">3 failures · live traffic affected</text>
+</svg>

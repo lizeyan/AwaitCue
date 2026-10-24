@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <rect width="800" height="450" fill="#eef1f4"/>
+  <rect x="62" y="48" width="676" height="354" rx="20" fill="#fff" stroke="#c8d0d9" stroke-width="3"/>
+  <text x="102" y="110" font-family="-apple-system, sans-serif" font-size="30" font-weight="700" fill="#24292f">Release dashboard</text>
+  <rect x="102" y="150" width="270" height="150" rx="16" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="130" y="198" font-family="-apple-system, sans-serif" font-size="22" fill="#59636e">Production</text>
+  <text x="130" y="250" font-family="-apple-system, sans-serif" font-size="28" fill="#8c959f">No recent status</text>
+  <rect x="410" y="150" width="286" height="150" rx="16" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="438" y="198" font-family="-apple-system, sans-serif" font-size="22" fill="#59636e">Last updated</text>
+  <text x="438" y="250" font-family="-apple-system, sans-serif" font-size="28" fill="#8c959f">Unknown</text>
+  <text x="102" y="354" font-family="-apple-system, sans-serif" font-size="20" fill="#8c959f">Refresh to load deployment information.</text>
+</svg>

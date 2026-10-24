@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "repetitions": 3,
+  "cases": [
+    {
+      "id": "condition-browser-matched",
+      "kind": "condition",
+      "expected": "matched",
+      "condition": "Deployment has succeeded and all production instances are healthy.",
+      "tags": ["browser", "dom+image", "positive"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-success.txt",
+        "image": "fixtures/images/condition-success.png"
+      }
+    },
+    {
+      "id": "condition-app-matched",
+      "kind": "condition",
+      "expected": "matched",
+      "condition": "Deployment has succeeded and all production instances are healthy.",
+      "tags": ["app", "image-only", "positive"],
+      "evidence": { "image": "fixtures/images/condition-success.png" }
+    },
+    {
+      "id": "condition-browser-not-matched",
+      "kind": "condition",
+      "expected": "notMatched",
+      "condition": "Deployment has succeeded and all production instances are healthy.",
+      "tags": ["browser", "dom+image", "negative"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-running.txt",
+        "image": "fixtures/images/condition-running.png"
+      }
+    },
+    {
+      "id": "condition-app-not-matched",
+      "kind": "condition",
+      "expected": "notMatched",
+      "condition": "Deployment has succeeded and all production instances are healthy.",
+      "tags": ["app", "image-only", "negative"],
+      "evidence": { "image": "fixtures/images/condition-running.png" }
+    },
+    {
+      "id": "condition-browser-uncertain",
+      "kind": "condition",
+      "expected": "uncertain",
+      "condition": "Deployment has succeeded and all production instances are healthy.",
+      "tags": ["browser", "dom+image", "uncertain"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-ambiguous.txt",
+        "image": "fixtures/images/condition-ambiguous.png"
+      }
+    },
+    {
+      "id": "condition-app-uncertain",
+      "kind": "condition",
+      "expected": "uncertain",
+      "condition": "Deployment has succeeded and all production instances are healthy.",
+      "tags": ["app", "image-only", "uncertain"],
+      "evidence": { "image": "fixtures/images/condition-ambiguous.png" }
+    },
+    {
+      "id": "interruptibility-browser-interruptible",
+      "kind": "interruptibility",
+      "expected": "interruptible",
+      "tags": ["browser", "dom+image", "article"],
+      "evidence": {
+        "textFile": "fixtures/dom/interrupt-reading.txt",
+        "image": "fixtures/images/interrupt-reading.png"
+      }
+    },
+    {
+      "id": "interruptibility-app-interruptible",
+      "kind": "interruptibility",
+      "expected": "interruptible",
+      "tags": ["app", "image-only", "article"],
+      "evidence": { "image": "fixtures/images/interrupt-reading.png" }
+    },
+    {
+      "id": "interruptibility-browser-not-interruptible",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "tags": ["browser", "dom+image", "focused-work"],
+      "evidence": {
+        "textFile": "fixtures/dom/interrupt-coding.txt",
+        "image": "fixtures/images/interrupt-coding.png"
+      }
+    },
+    {
+      "id": "interruptibility-app-not-interruptible",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "tags": ["app", "image-only", "focused-work"],
+      "evidence": { "image": "fixtures/images/interrupt-coding.png" }
+    },
+    {
+      "id": "interruptibility-browser-uncertain",
+      "kind": "interruptibility",
+      "expected": "uncertain",
+      "tags": ["browser", "dom+image", "uncertain"],
+      "evidence": {
+        "textFile": "fixtures/dom/interrupt-ambiguous.txt",
+        "image": "fixtures/images/interrupt-ambiguous.png"
+      }
+    },
+    {
+      "id": "interruptibility-app-uncertain",
+      "kind": "interruptibility",
+      "expected": "uncertain",
+      "tags": ["app", "image-only", "uncertain"],
+      "evidence": { "image": "fixtures/images/interrupt-ambiguous.png" }
+    }
+  ]
+}
