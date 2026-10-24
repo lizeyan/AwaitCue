@@ -20,7 +20,7 @@
     "@types/chrome": "^0.1.31",
     "@types/node": "^24.9.1",
     "@vitest/coverage-v8": "^4.0.3",
-    "eslint": "^9.38.0",
+    "eslint": "^10.13.0",
     "esbuild": "^0.25.11",
     "globals": "^16.4.0",
     "jsdom": "^27.0.1",
