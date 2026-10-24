@@ -14,13 +14,18 @@ test("normalizes a mixed condition and interruptibility manifest", () => {
           kind: "condition",
           expected: "matched",
           condition: "构建已经完成",
-          evidence: { text: "Build succeeded", image: "fixtures/build.png" },
+          tags: ["browser", "dom-only"],
+          evidence: { text: "Build succeeded" },
         },
         {
           id: "reading-article",
           kind: "interruptibility",
           expected: "interruptible",
-          evidence: { textFile: "fixtures/article.txt" },
+          tags: ["active-window", "screen-evidence"],
+          evidence: {
+            text: "前台应用：Safari\n窗口标题：Article\n距最近输入约：18 秒",
+            image: "fixtures/article.png",
+          },
           repetitions: 3,
         },
       ],
@@ -30,9 +35,48 @@ test("normalizes a mixed condition and interruptibility manifest", () => {
 
   assert.equal(manifest.repetitions, 5);
   assert.equal(manifest.cases[0].repetitions, 5);
-  assert.equal(manifest.cases[0].evidence.image, "/benchmark/fixtures/build.png");
+  assert.equal(manifest.cases[0].evidence.image, undefined);
   assert.equal(manifest.cases[1].repetitions, 3);
-  assert.equal(manifest.cases[1].evidence.textFile, "/benchmark/fixtures/article.txt");
+  assert.equal(manifest.cases[1].evidence.image, "/benchmark/fixtures/article.png");
+  assert.match(manifest.cases[1].evidence.text, /Safari/);
+});
+
+test("enforces Condition target surfaces and active-window interruption screenshots", () => {
+  assert.throws(
+    () => validateBenchmarkManifest({
+      version: 1,
+      cases: [{
+        ...fixtureCase(),
+        tags: ["browser"],
+        evidence: { text: "DOM", image: "fixtures/build.png" },
+      }],
+    }, "/tmp"),
+    /browser evidence must be DOM-only/,
+  );
+  assert.throws(
+    () => validateBenchmarkManifest({
+      version: 1,
+      cases: [{
+        ...fixtureCase(),
+        tags: ["app"],
+        evidence: { text: "DOM" },
+      }],
+    }, "/tmp"),
+    /app evidence must be image-only/,
+  );
+  assert.throws(
+    () => validateBenchmarkManifest({
+      version: 1,
+      cases: [{
+        id: "interrupt-reading",
+        kind: "interruptibility",
+        expected: "interruptible",
+        tags: ["active-window"],
+        evidence: { text: "Article text from DOM" },
+      }],
+    }, "/tmp"),
+    /interruptibility evidence must be an active-window image/,
+  );
 });
 
 test("rejects duplicate IDs, incompatible labels, and empty evidence", () => {
@@ -62,6 +106,7 @@ function fixtureCase() {
     kind: "condition",
     expected: "matched",
     condition: "构建完成",
+    tags: ["browser"],
     evidence: { text: "Build complete" },
   };
 }

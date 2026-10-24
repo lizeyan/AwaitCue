@@ -67,6 +67,43 @@ struct FileDescriptorChunkReaderTests {
     }
 }
 
+@Suite("文件描述符完整写入")
+struct FileDescriptorChunkWriterTests {
+    @Test("短帧无需关闭描述符即可立即抵达读端")
+    func writesCompleteFrameWithoutWaitingForClose() throws {
+        var descriptors = [Int32](repeating: -1, count: 2)
+        #expect(pipe(&descriptors) == 0)
+        let writer = FileDescriptorChunkWriter(fileDescriptor: descriptors[1])
+        let payload = Data(#"{"type":"resolveSelection"}"#.utf8)
+
+        try writer.write(payload)
+
+        var buffer = [UInt8](repeating: 0, count: 128)
+        let count = Darwin.read(descriptors[0], &buffer, buffer.count)
+        #expect(count == payload.count)
+        #expect(Data(buffer.prefix(count)) == payload)
+        Darwin.close(descriptors[0])
+        Darwin.close(descriptors[1])
+    }
+
+    @Test("关闭的写端保留 POSIX 错误")
+    func closedDescriptorThrows() {
+        var descriptors = [Int32](repeating: -1, count: 2)
+        #expect(pipe(&descriptors) == 0)
+        let writer = FileDescriptorChunkWriter(fileDescriptor: descriptors[1])
+        Darwin.close(descriptors[0])
+        Darwin.close(descriptors[1])
+
+        do {
+            try writer.write(Data([1]))
+            Issue.record("关闭的文件描述符不应写入成功")
+        } catch let error as NSError {
+            #expect(error.domain == NSPOSIXErrorDomain)
+            #expect(error.code == Int(EBADF))
+        }
+    }
+}
+
 private final class ReaderResultBox: @unchecked Sendable {
     private let lock = NSLock()
     private var result: Result<Data?, any Error>?

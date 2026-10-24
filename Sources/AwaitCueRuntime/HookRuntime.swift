@@ -71,7 +71,12 @@ public actor HookRuntime {
             return
         }
         guard isCurrentConditionEvaluation(generation, hookID: hookID) else { return }
-        guard Self.evidence(evidence, satisfies: condition.requiredEvidence) else {
+        // 历史 Browser Hook 可能持久化过 image/domAndImage；新产品语义统一迁移为 DOM-only。
+        let effectiveRequirement: EvidenceRequirement = switch hook.target {
+        case .browser: .dom
+        case .window: condition.requiredEvidence
+        }
+        guard Self.evidence(evidence, satisfies: effectiveRequirement) else {
             return
         }
         let evaluation: ConditionEvaluation

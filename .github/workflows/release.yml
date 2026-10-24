@@ -25,7 +25,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: BrowserExtension/package-lock.json
+          cache-dependency-path: |
+            BrowserExtension/package-lock.json
+            SafariExtension/package-lock.json
       - name: Verify tag belongs to master
         run: |
           git fetch origin master
@@ -53,11 +55,22 @@ jobs:
         run: |
           test -n "${NOTARY_KEY_BASE64}"
           echo "${NOTARY_KEY_BASE64}" | base64 --decode > "${RUNNER_TEMP}/AuthKey.p8"
+      - name: Decode Developer ID provisioning profiles
+        env:
+          APP_PROFILE_BASE64: ${{ secrets.APPLE_APP_PROVISIONING_PROFILE_BASE64 }}
+          SAFARI_PROFILE_BASE64: ${{ secrets.APPLE_SAFARI_EXTENSION_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          test -n "${APP_PROFILE_BASE64}"
+          test -n "${SAFARI_PROFILE_BASE64}"
+          echo "${APP_PROFILE_BASE64}" | base64 --decode > "${RUNNER_TEMP}/AwaitCue.provisionprofile"
+          echo "${SAFARI_PROFILE_BASE64}" | base64 --decode > "${RUNNER_TEMP}/AwaitCueSafariExtension.provisionprofile"
       - name: Build and sign DMG
         env:
           VERSION: ${{ github.ref_name }}
           BUILD_NUMBER: ${{ github.run_number }}
           CODESIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
+          APP_PROVISIONING_PROFILE: ${{ runner.temp }}/AwaitCue.provisionprofile
+          SAFARI_EXTENSION_PROVISIONING_PROFILE: ${{ runner.temp }}/AwaitCueSafariExtension.provisionprofile
         run: |
           export VERSION="${VERSION#v}"
           ./Scripts/package-release.sh

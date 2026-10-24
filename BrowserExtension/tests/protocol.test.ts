@@ -3,7 +3,15 @@ import { isNormalizedRegion, parseNativeCommand } from "../src/protocol";
 
 describe("native protocol", () => {
   it("parses supported commands", () => {
-    expect(parseNativeCommand({ type: "ping" })).toEqual({ type: "ping" });
+    expect(parseNativeCommand({
+      type: "ping",
+      requestID: "ping-1",
+      extensionInstallationID: "installation-1"
+    })).toEqual({
+      type: "ping",
+      requestID: "ping-1",
+      extensionInstallationID: "installation-1"
+    });
     expect(parseNativeCommand({
       type: "resolveActiveHost",
       requestID: "active-host-1"
@@ -51,6 +59,7 @@ describe("native protocol", () => {
     expect(
       parseNativeCommand({
         type: "bindTarget",
+        requestID: "bind-1",
         extensionInstallationID: "installation-1",
         hookID: "hook-1",
         tabID: 7,
@@ -61,13 +70,13 @@ describe("native protocol", () => {
       })
     ).toEqual({
       type: "bindTarget",
+      requestID: "bind-1",
       extensionInstallationID: "installation-1",
       hookID: "hook-1",
       tabID: 7,
       expectedHost: "example.com",
       expectedURL: "https://example.com/build",
-      region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
-      requirePixels: true
+      region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 }
     });
   });
 

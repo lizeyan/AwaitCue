@@ -348,7 +348,7 @@ struct GlobalSelectionControllerTests {
             initialURL: URL(string: "https://example.com/build")!,
             initialTitle: "Build",
             normalizedRegion: NormalizedRegion(x: 0.05, y: 0.125, width: 0.25, height: 0.2),
-            observationMode: .domAndImage
+            observationMode: .dom
         )
         let relay = FixtureControllerBrowserRelay(
             resolution: .resolved(target),

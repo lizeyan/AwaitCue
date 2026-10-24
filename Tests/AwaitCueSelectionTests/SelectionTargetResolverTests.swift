@@ -172,7 +172,7 @@ struct SelectionTargetResolverTests {
             initialURL: URL(string: "https://example.com/build")!,
             initialTitle: "Build",
             normalizedRegion: NormalizedRegion(x: 0.2, y: 0.3, width: 0.4, height: 0.2),
-            observationMode: .domAndImage
+            observationMode: .dom
         )
         let relay = FixtureBrowserSelectionRelay(result: .resolved(browserTarget))
         let resolver = fixtureTargetResolver(relay: relay)
@@ -227,7 +227,7 @@ private func fixtureBrowserTarget(
         initialURL: URL(string: "https://example.com")!,
         initialTitle: "Example",
         normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1),
-        observationMode: .domAndImage
+        observationMode: .dom
     )
 }
 

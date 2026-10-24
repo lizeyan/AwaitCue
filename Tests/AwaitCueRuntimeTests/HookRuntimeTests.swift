@@ -456,6 +456,39 @@ struct HookRuntimeTests {
         }
     }
 
+    @Test("旧浏览器 Hook 即使曾要求图片也只用 DOM 进入判断")
+    func legacyBrowserImageRequirementMigratesToDOM() async throws {
+        let now = Date(timeIntervalSince1970: 110_650)
+        let hook = makeBrowserObservingHook(
+            id: UUID().uuidString,
+            now: now,
+            requiredEvidence: .domAndImage
+        )
+        let repository = RuntimeHookRepository(hooks: [hook])
+        let decisions = RecordingDecisionProvider(
+            conditionResults: [
+                .success(ConditionEvaluation(decision: .notMatched, confidence: 0.8)),
+            ],
+            interruptibilityResults: []
+        )
+        let runtime = HookRuntime(
+            coordinator: HookCoordinator(repository: repository),
+            conditionEvidenceProvider: RecordingConditionEvidenceProvider(
+                result: .success(ModelEvidence(domText: "DOM ready"))
+            ),
+            activeEvidenceProvider: RecordingActiveEvidenceProvider(
+                result: .success(ModelEvidence(text: "unused"))
+            ),
+            decisionProvider: decisions,
+            effectExecutor: RecordingEffectExecutor(),
+            clock: FixedRuntimeClock(now: now)
+        )
+
+        try await runtime.observeCondition(hookID: hook.id)
+
+        #expect(await decisions.conditionCallCount == 1)
+    }
+
     @Test("Condition provider 报告局部证据未完成时保持观察且不调用模型")
     func partialConditionEvidenceWaitsForNextObservation() async throws {
         let now = Date(timeIntervalSince1970: 110_700)
@@ -1730,6 +1763,41 @@ private func makeObservingHook(
                 windowIdentifier: UInt32(id.suffix(1)) ?? 1,
                 initialTitle: "Target",
                 normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1)
+            )
+        ),
+        trigger: .condition(
+            ConditionDefinition(
+                originalText: "完成时提醒",
+                confirmedSummary: "已经完成",
+                requiredEvidence: requiredEvidence
+            )
+        ),
+        state: .observing,
+        createdAt: now,
+        updatedAt: now,
+        conditionProgress: ConditionProgress()
+    )
+}
+
+private func makeBrowserObservingHook(
+    id: String,
+    now: Date,
+    requiredEvidence: EvidenceRequirement
+) -> Hook {
+    Hook(
+        id: HookID(rawValue: UUID(uuidString: id)!),
+        title: "观察浏览器条件",
+        target: .browser(
+            BrowserTarget(
+                browserBundleIdentifier: "com.google.Chrome",
+                nativeWindowIdentifier: 42,
+                extensionInstallationID: "installation-1",
+                tabIdentifier: 7,
+                host: "example.com",
+                initialURL: URL(string: "https://example.com")!,
+                initialTitle: "Example",
+                normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1),
+                observationMode: .dom
             )
         ),
         trigger: .condition(

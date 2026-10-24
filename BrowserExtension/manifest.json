@@ -6,10 +6,8 @@
   "minimum_chrome_version": "116",
   "permissions": [
     "nativeMessaging",
-    "offscreen",
     "scripting",
-    "storage",
-    "tabCapture"
+    "storage"
   ],
   "host_permissions": [
     "http://*/*",
@@ -19,6 +17,13 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
     "default_title": "Bind current tab to AwaitCue",
     "default_icon": {

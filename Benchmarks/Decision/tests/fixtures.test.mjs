@@ -13,7 +13,7 @@ test("canonical fixtures cover every decision and evidence surface without secre
   const source = await readFile(manifestPath, "utf8");
   assert.doesNotMatch(source, /(api[_-]?key|bearer\s+|bytedance\.net|aidp\.)/i);
   const manifest = validateBenchmarkManifest(JSON.parse(source), benchmarkDirectory);
-  assert.equal(manifest.cases.length, 30);
+  assert.equal(manifest.cases.length, 24);
   const requiredScenarios = new Set([
     "scenario:overall-failed-local-success",
     "scenario:duplicate-name-conflict",
@@ -28,6 +28,7 @@ test("canonical fixtures cover every decision and evidence surface without secre
     "scenario:article-reading",
     "scenario:chat-reading",
     "scenario:mixed-focus-unknown",
+    "scenario:no-semantic-content",
   ]);
   const actualScenarios = new Set(
     manifest.cases.flatMap((entry) => entry.tags.filter((tag) => tag.startsWith("scenario:"))),
@@ -42,27 +43,36 @@ test("canonical fixtures cover every decision and evidence surface without secre
     "condition:notMatched:app",
     "condition:uncertain:browser",
     "condition:uncertain:app",
-    "interruptibility:interruptible:browser",
-    "interruptibility:interruptible:app",
-    "interruptibility:notInterruptible:browser",
-    "interruptibility:notInterruptible:app",
-    "interruptibility:uncertain:browser",
-    "interruptibility:uncertain:app",
+    "interruptibility:interruptible:active-window",
+    "interruptibility:notInterruptible:active-window",
+    "interruptibility:uncertain:active-window",
   ]);
   const actualCases = new Set();
   for (const entry of manifest.cases) {
-    const surface = entry.tags.includes("browser") ? "browser" : "app";
+    const surface = entry.kind === "interruptibility"
+      ? "active-window"
+      : entry.tags.includes("browser") ? "browser" : "app";
     actualCases.add(`${entry.kind}:${entry.expected}:${surface}`);
-    assert.ok(entry.evidence.image.startsWith(benchmarkDirectory));
-    const image = await readFile(entry.evidence.image);
-    assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
     if (surface === "browser") {
       assert.ok(entry.evidence.textFile, `${entry.id} must include browser DOM evidence`);
       assert.ok((await readFile(entry.evidence.textFile, "utf8")).trim().length > 0);
+      assert.equal(entry.evidence.image, undefined, `${entry.id} must not include browser pixels`);
     } else {
+      assert.ok(entry.evidence.image.startsWith(benchmarkDirectory));
+      const image = await readFile(entry.evidence.image);
+      assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
       assert.equal(entry.evidence.textFile, undefined);
-      assert.equal(entry.evidence.text, undefined);
+      if (surface === "app") {
+        assert.equal(entry.evidence.text, undefined);
+      } else {
+        assert.match(entry.evidence.text, /前台应用：/);
+        assert.ok(entry.tags.includes("screen-evidence"));
+      }
     }
   }
+  assert.equal(
+    manifest.cases.filter((entry) => entry.tags.includes("scenario:no-semantic-content")).length,
+    1,
+  );
   assert.deepEqual(actualCases, expectedCases);
 });

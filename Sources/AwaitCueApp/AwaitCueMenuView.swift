@@ -98,6 +98,7 @@ struct AwaitCueMenuView: View {
             .disabled(model.isSelectingTarget)
             Spacer()
             Button("设置…", action: openSettings)
+                .accessibilityIdentifier("awaitcue.open-settings")
             Button("退出") { model.quit() }
         }
     }

@@ -10,23 +10,26 @@ HTTP library, or model implementation produced the answer.
 
 ## Fixed sample set
 
-`benchmark.v1.json` contains 30 synthetic, non-sensitive cases. Every decision label is represented
-on both evidence surfaces, and the corpus includes the recurrent ambiguity and focus cases below:
+`benchmark.v1.json` contains 24 synthetic, non-sensitive cases. The evidence surface follows the
+production path instead of creating a symmetric but artificial matrix:
 
-| Decision | Browser DOM + image | App image-only |
-|---|---:|---:|
-| Condition matched | yes | yes |
-| Condition notMatched | yes | yes |
-| Condition uncertain | yes | yes |
-| Interruptible | yes | yes |
-| Not interruptible | yes | yes |
-| Interruptibility uncertain | yes | yes |
+| Decision | Browser Target DOM-only | App Target image-only | Active-window screenshot + activity summary |
+|---|---:|---:|---:|
+| Condition matched | yes | yes | no |
+| Condition notMatched | yes | yes | no |
+| Condition uncertain | yes | yes | no |
+| Interruptible | no | no | yes |
+| Not interruptible | no | no | yes |
+| Interruptibility uncertain | no | no | yes |
 
 Condition regression scenarios include overall failure with a locally successful target, duplicate
 same-name nodes with conflicting states, Condition text visible inside an input field, explicit
 failure, queued/running work, and missing status. Interruptibility scenarios include meetings,
 full-screen presentations, active document writing, production debugging, ordinary article reading,
-idle chat reading, and mixed-window focus that cannot be identified reliably.
+idle chat reading, and mixed-window focus that cannot be identified reliably. The browser Condition
+case for `no_semantic_content` freezes the production behavior and requires `uncertain` instead of
+guessing a Canvas or pure-image state. Appropriate to Interrupt always uses the current frontmost
+window screenshot, even when that window belongs to a browser; it never uses Browser Target DOM.
 
 The PNGs are generated from the checked-in SVG sources. They contain no user screenshots, internal
 URLs, accounts, API keys, or company data. Labels are independent literals defined by the scenario,
@@ -102,11 +105,17 @@ The endpoint is reduced to its hostname.
 
 ## Adding a case
 
-1. Create a synthetic screenshot in `fixtures/source/` and its PNG under `fixtures/images/`.
-2. For browser evidence, add a short, selected-region DOM fixture under `fixtures/dom/`.
-3. Add one human label to `benchmark.v1.json` before running the model.
-4. Add both browser DOM+image and app image-only variants when introducing a new semantic scenario.
-5. Run the offline tests and review the image manually.
+1. For a Browser Condition case, add only a short selected-region DOM fixture under `fixtures/dom/`;
+   browser Condition cases must never reference an image.
+2. For an App Condition case, create a synthetic screenshot in `fixtures/source/` and its PNG under
+   `fixtures/images/`; App Condition cases must not add DOM text.
+3. For an Appropriate to Interrupt case, add an `active-window` synthetic screenshot and the same
+   short app/title/recent-input summary used by production. Do not add a DOM variant: production
+   captures the frontmost window for this decision, including browser windows.
+4. Add one human label to `benchmark.v1.json` before running the model.
+5. Add both browser DOM-only and app image-only Condition variants when the semantic scenario applies
+   to both surfaces. Browser-specific evidence insufficiency cases do not need a fake App variant.
+6. Run the offline tests and review the image manually.
 
 Do not add real customer pages, internal dashboards, private messages, window titles, full URLs, or
 captured user desktops to the repository.

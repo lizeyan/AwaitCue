@@ -132,7 +132,7 @@ private func makeConditionHook(id: String, title: String, createdAt: Date) -> Ho
                 initialURL: URL(string: "https://example.com/build")!,
                 initialTitle: "Build",
                 normalizedRegion: NormalizedRegion(x: 0.1, y: 0.2, width: 0.5, height: 0.4),
-                observationMode: .domAndImage
+                observationMode: .dom
             )
         ),
         trigger: .condition(

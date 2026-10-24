@@ -2,12 +2,26 @@ import AwaitCueBrowserBridge
 import AwaitCueCore
 import AwaitCueModel
 import AwaitCueRuntime
+import AwaitCueSafariBridge
 import AwaitCueSelection
 import Foundation
+import OSLog
 
-/// 通过本地 native relay 向具体 Chromium 扩展查询标签页身份和 viewport 区域。
+struct BrowserBridgeStatusUpdate: Sendable {
+    let browserBundleIdentifier: String?
+    let message: String
+}
+
+/// 通过浏览器各自的 transport 查询具体标签页身份和 DOM-only 页面证据。
 actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostResolving {
-    nonisolated let statuses: AsyncStream<String>
+    private static let logger = Logger(
+        subsystem: "org.awaitcue.AwaitCue",
+        category: "BrowserSelectionRelay"
+    )
+    private static let e2eDiagnosticsEnabled = ProcessInfo.processInfo.environment[
+        "AWAITCUE_E2E_DIAGNOSTICS"
+    ] == "1"
+    nonisolated let statuses: AsyncStream<BrowserBridgeStatusUpdate>
     nonisolated let evidenceUpdates: AsyncStream<HookID>
     nonisolated let targetUnavailableUpdates: AsyncStream<HookID>
 
@@ -29,8 +43,32 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         let browserBundleIdentifier: String
     }
 
+    private struct BrowserInstallationIdentity: Hashable {
+        let extensionInstallationID: String
+        let browserBundleIdentifier: String
+    }
+
+    private struct PendingBinding {
+        let hookID: HookID
+        let extensionInstallationID: String
+        let browserBundleIdentifier: String
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
+    private struct PendingTargetCommand {
+        let hookID: HookID
+        let extensionInstallationID: String
+        let browserBundleIdentifier: String
+        let expectedAcknowledgement: String
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
     private let server: NativeBridgeServer
-    private let statusContinuation: AsyncStream<String>.Continuation
+    private let safariCommandDispatcher: any SafariExtensionCommandDispatching
+    private let handshakeTimeout: Duration
+    private let selectionCollectionTimeout: Duration
+    private let commandAcknowledgementTimeout: Duration
+    private let statusContinuation: AsyncStream<BrowserBridgeStatusUpdate>.Continuation
     private let evidenceUpdateContinuation: AsyncStream<HookID>.Continuation
     private let targetUnavailableContinuation: AsyncStream<HookID>.Continuation
     private var pending: [String: PendingSelection] = [:]
@@ -38,12 +76,29 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     private var evidenceByHook: [HookID: ModelEvidence] = [:]
     private var installationByHook: [HookID: BoundInstallation] = [:]
     private var previewDOMByTarget: [String: String] = [:]
+    private var pendingHandshakes: [String: BrowserInstallationIdentity] = [:]
+    private var timedOutHandshakeRequestIDs: Set<String> = []
+    private var pendingBindings: [String: PendingBinding] = [:]
+    private var pendingTargetCommands: [String: PendingTargetCommand] = [:]
+    private var verifiedInstallations: Set<BrowserInstallationIdentity> = []
     private var listenTask: Task<Void, Never>?
 
-    init(server: NativeBridgeServer) {
+    init(
+        server: NativeBridgeServer,
+        safariCommandDispatcher: any SafariExtensionCommandDispatching = SafariExtensionCommandDispatcher(),
+        handshakeTimeout: Duration = .seconds(10),
+        selectionCollectionTimeout: Duration = .seconds(10),
+        commandAcknowledgementTimeout: Duration = .seconds(10)
+    ) {
         self.server = server
+        self.safariCommandDispatcher = safariCommandDispatcher
+        self.handshakeTimeout = handshakeTimeout
+        self.selectionCollectionTimeout = selectionCollectionTimeout
+        self.commandAcknowledgementTimeout = commandAcknowledgementTimeout
         // 浏览器页面可以高频变化；只保留有限最新事件，避免主线程暂时阻塞时积累敏感证据通知。
-        let stream = AsyncStream<String>.makeStream(bufferingPolicy: .bufferingNewest(16))
+        let stream = AsyncStream<BrowserBridgeStatusUpdate>.makeStream(
+            bufferingPolicy: .bufferingNewest(16)
+        )
         statuses = stream.stream
         statusContinuation = stream.continuation
         let evidenceStream = AsyncStream<HookID>.makeStream(bufferingPolicy: .bufferingNewest(64))
@@ -64,8 +119,17 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         }
     }
 
-    func stop() {
-        listenTask?.cancel()
+    func stop() async {
+        guard let activeListenTask = listenTask else { return }
+        if hasVerifiedInstallation(
+            for: SafariBridgeMessageCodec.browserBundleIdentifier
+        ), let payload = try? JSONSerialization.data(withJSONObject: [
+            "type": "stopAllBindings",
+        ]) {
+            // Safari native extension 与菜单栏 App 生命周期独立；退出前必须显式停止页面观察。
+            try? await safariCommandDispatcher.dispatch(payload)
+        }
+        activeListenTask.cancel()
         listenTask = nil
         for selection in pending.values {
             selection.continuation.resume(returning: .unavailable(.noExtensionResponse))
@@ -76,50 +140,95 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         }
         pendingActiveHosts.removeAll()
         previewDOMByTarget.removeAll()
+        pendingHandshakes.removeAll()
+        timedOutHandshakeRequestIDs.removeAll()
+        for binding in pendingBindings.values {
+            binding.continuation.resume(throwing: NativeBridgeError.disconnected)
+        }
+        pendingBindings.removeAll()
+        for command in pendingTargetCommands.values {
+            command.continuation.resume(throwing: NativeBridgeError.disconnected)
+        }
+        pendingTargetCommands.removeAll()
+        verifiedInstallations.removeAll()
         statusContinuation.finish()
         evidenceUpdateContinuation.finish()
         targetUnavailableContinuation.finish()
     }
 
-    /// 告诉解析出具体 tab 的扩展开始 DOM 观察，并按需要启动像素捕获。
-    func bind(hookID: HookID, target: BrowserTarget, requirePixels: Bool) async throws {
+    /// 告诉解析出具体 tab 的扩展开始 DOM、ARIA 和状态属性观察。
+    func bind(hookID: HookID, target: BrowserTarget) async throws {
+        let requestID = UUID().uuidString
         let command: [String: Any] = [
             "type": "bindTarget",
+            "requestID": requestID,
             "extensionInstallationID": target.extensionInstallationID,
             "hookID": hookID.rawValue.uuidString,
             "tabID": target.tabIdentifier,
             "expectedHost": target.host,
             "expectedURL": target.initialURL.absoluteString,
             "region": Self.jsonRegion(target.normalizedRegion),
-            "requirePixels": requirePixels,
         ]
         installationByHook[hookID] = BoundInstallation(
             extensionInstallationID: target.extensionInstallationID,
             browserBundleIdentifier: target.browserBundleIdentifier
         )
-        do {
-            try await server.broadcastPayload(JSONSerialization.data(withJSONObject: command))
-        } catch {
-            installationByHook[hookID] = nil
-            throw error
+        let payload = try JSONSerialization.data(withJSONObject: command)
+        let commandTimeout = commandAcknowledgementTimeout
+        try await withCheckedThrowingContinuation { continuation in
+            pendingBindings[requestID] = PendingBinding(
+                hookID: hookID,
+                extensionInstallationID: target.extensionInstallationID,
+                browserBundleIdentifier: target.browserBundleIdentifier,
+                continuation: continuation
+            )
+            Task { [weak self] in
+                do {
+                    guard let self else { return }
+                    _ = try await self.sendPayload(payload, to: target.browserBundleIdentifier)
+                } catch {
+                    await self?.finishBinding(requestID: requestID, error: error)
+                    return
+                }
+                try? await Task.sleep(for: commandTimeout)
+                await self?.finishBinding(
+                    requestID: requestID,
+                    error: NativeBridgeError.disconnected
+                )
+            }
         }
     }
 
-    /// 停止指定浏览器 Hook 的 DOM 观察和 tabCapture。
-    func unbind(hookID: HookID, extensionInstallationID: String) async throws {
-        let command: [String: Any] = [
+    /// 停止指定浏览器 Hook 的页面内容观察。
+    func unbind(hookID: HookID, target: BrowserTarget) async throws {
+        var command: [String: Any] = [
             "type": "unbindTarget",
-            "extensionInstallationID": extensionInstallationID,
+            "extensionInstallationID": target.extensionInstallationID,
             "hookID": hookID.rawValue.uuidString,
         ]
-        try await server.broadcastPayload(JSONSerialization.data(withJSONObject: command))
+        if target.browserBundleIdentifier == SafariBridgeMessageCodec.browserBundleIdentifier {
+            let requestID = UUID().uuidString
+            command["requestID"] = requestID
+            try await sendSafariCommandAwaitingAcknowledgement(
+                command,
+                requestID: requestID,
+                expectedAcknowledgement: "targetUnbound",
+                hookID: hookID,
+                target: target
+            )
+        } else {
+            _ = try await sendPayload(
+                JSONSerialization.data(withJSONObject: command),
+                to: target.browserBundleIdentifier
+            )
+        }
         evidenceByHook[hookID] = nil
         installationByHook[hookID] = nil
     }
 
     /// 激活持久化 Target 原本绑定的标签页；扩展仍会重新验证 tab URL 与 host。
     func focus(hookID: HookID, target: BrowserTarget) async throws {
-        let command: [String: Any] = [
+        var command: [String: Any] = [
             "type": "focusTarget",
             "extensionInstallationID": target.extensionInstallationID,
             "hookID": hookID.rawValue.uuidString,
@@ -127,10 +236,25 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             "expectedHost": target.host,
             "expectedURL": target.initialURL.absoluteString,
         ]
-        try await server.broadcastPayload(JSONSerialization.data(withJSONObject: command))
+        if target.browserBundleIdentifier == SafariBridgeMessageCodec.browserBundleIdentifier {
+            let requestID = UUID().uuidString
+            command["requestID"] = requestID
+            try await sendSafariCommandAwaitingAcknowledgement(
+                command,
+                requestID: requestID,
+                expectedAcknowledgement: "targetFocused",
+                hookID: hookID,
+                target: target
+            )
+        } else {
+            _ = try await sendPayload(
+                JSONSerialization.data(withJSONObject: command),
+                to: target.browserBundleIdentifier
+            )
+        }
     }
 
-    /// 返回扩展最近一次只驻留内存的 DOM/图片证据。
+    /// 返回扩展最近一次只驻留内存的页面内容证据。
     func evidence(for hookID: HookID) throws -> ModelEvidence {
         guard let evidence = evidenceByHook[hookID] else {
             throw HookRuntimeEvidenceError.browserExtensionDisconnected
@@ -147,8 +271,14 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     func resolveBrowserTarget(
         for selection: ResolvedWindowSelection
     ) async throws -> BrowserSelectionRelayResolution {
-        guard Self.chromiumBundleIdentifiers.contains(selection.window.applicationBundleIdentifier) else {
+        guard Self.browserBundleIdentifiers.contains(selection.window.applicationBundleIdentifier) else {
             return .notBrowser
+        }
+        guard await waitForVerifiedInstallation(
+            for: selection.window.applicationBundleIdentifier
+        ) else {
+            Self.writeE2EDiagnostic("resolveSelection blocked: browser is not duplex-verified")
+            return .unavailable(.noExtensionResponse)
         }
         let requestID = UUID().uuidString
         let command: [String: Any] = [
@@ -158,6 +288,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             "selectionRect": Self.jsonRect(selection.screenCaptureRect),
         ]
         let payload = try JSONSerialization.data(withJSONObject: command)
+        let collectionTimeout = selectionCollectionTimeout
 
         return try await withCheckedThrowingContinuation { continuation in
             pending[requestID] = PendingSelection(
@@ -169,13 +300,27 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
                 ),
                 responseGate: BrowserSelectionResponseGate()
             )
-            Task { [weak self, server] in
+            Task { [weak self] in
                 do {
-                    let recipientCount = try await server.broadcastPayload(payload)
-                    await self?.setExpectedSelectionResponseCount(
-                        recipientCount,
-                        requestID: requestID
+                    guard let self else { return }
+                    let recipientCount = try await self.sendPayload(
+                        payload,
+                        to: selection.window.applicationBundleIdentifier
                     )
+                    Self.logger.info("resolveSelection broadcast recipients=\(recipientCount)")
+                    Self.writeE2EDiagnostic(
+                        "resolveSelection broadcast recipients=\(recipientCount)"
+                    )
+                    // Safari dispatch 可能抵达多个 Profile，completion 次数不等于 installation 数量；
+                    // 必须收满窗口，才能识别两个匹配或先失败后成功，避免绑定错误 Profile。
+                    if selection.window.applicationBundleIdentifier
+                        != SafariBridgeMessageCodec.browserBundleIdentifier
+                    {
+                        await self.setExpectedSelectionResponseCount(
+                            recipientCount,
+                            requestID: requestID
+                        )
+                    }
                 } catch {
                     await self?.finish(
                         requestID: requestID,
@@ -183,7 +328,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
                     )
                     return
                 }
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: collectionTimeout)
                 await self?.finishSelectionAfterCollection(requestID: requestID)
             }
         }
@@ -193,8 +338,11 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     func resolveActiveBrowserHost(
         for browserBundleIdentifier: String
     ) async throws -> ActiveBrowserHostResolution {
-        guard Self.chromiumBundleIdentifiers.contains(browserBundleIdentifier) else {
+        guard Self.browserBundleIdentifiers.contains(browserBundleIdentifier) else {
             return .notBrowser
+        }
+        guard hasVerifiedInstallation(for: browserBundleIdentifier) else {
+            return .unavailable
         }
         let requestID = UUID().uuidString
         let payload = try JSONSerialization.data(withJSONObject: [
@@ -209,9 +357,10 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
                     browserBundleIdentifier: browserBundleIdentifier
                 )
             )
-            Task { [weak self, server] in
+            Task { [weak self] in
                 do {
-                    try await server.broadcastPayload(payload)
+                    guard let self else { return }
+                    _ = try await self.sendPayload(payload, to: browserBundleIdentifier)
                 } catch {
                     await self?.finishActiveHost(
                         requestID: requestID,
@@ -229,32 +378,229 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         guard let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
               let type = object["type"] as? String
         else {
-            statusContinuation.yield("扩展消息无效")
+            statusContinuation.yield(
+                BrowserBridgeStatusUpdate(browserBundleIdentifier: nil, message: "扩展消息无效")
+            )
             return
         }
+        Self.logger.info("received browser event type=\(type, privacy: .public)")
+        Self.writeE2EDiagnostic("received browser event type=\(type)")
         switch type {
         case "ready":
-            statusContinuation.yield("Chromium 扩展已连接")
+            beginHandshake(object)
+        case "pong":
+            finishHandshake(object)
         case "selectionResolved":
             handleSelectionResponse(object)
         case "activeHostResolved":
             handleActiveHostResponse(object)
         case "evidenceChanged":
             handleDOMEvidence(object)
-        case "captureFrame":
-            handleCaptureFrame(object)
+        case "targetBound":
+            handleTargetBound(object)
+        case "targetFocused", "targetUnbound":
+            handleTargetCommandAcknowledgement(type: type, object: object)
         case "targetUnavailable":
-            statusContinuation.yield("浏览器目标不可用")
+            statusContinuation.yield(
+                BrowserBridgeStatusUpdate(
+                    browserBundleIdentifier: object["browserBundleIdentifier"] as? String,
+                    message: "浏览器目标不可用"
+                )
+            )
             handleTargetUnavailable(object)
-        case "captureAuthorizationRequired":
-            statusContinuation.yield("请点击 AwaitCue 扩展图标允许后台像素观察")
-        case "captureAuthorized":
-            statusContinuation.yield("浏览器后台像素观察已启用")
         case "error":
-            statusContinuation.yield("浏览器扩展报告错误")
+            statusContinuation.yield(
+                BrowserBridgeStatusUpdate(
+                    browserBundleIdentifier: object["browserBundleIdentifier"] as? String,
+                    message: "浏览器扩展报告错误"
+                )
+            )
+            handleTargetCommandError(object)
         default:
             break
         }
+    }
+
+    /// ready 只证明浏览器可以向应用发消息；必须用关联的 ping/pong 再确认反向链路。
+    private func beginHandshake(_ object: [String: Any]) {
+        guard let extensionInstallationID = object["extensionInstallationID"] as? String,
+              !extensionInstallationID.isEmpty,
+              let browserBundleIdentifier = object["browserBundleIdentifier"] as? String,
+              Self.browserBundleIdentifiers.contains(browserBundleIdentifier)
+        else {
+            return
+        }
+        let identity = BrowserInstallationIdentity(
+            extensionInstallationID: extensionInstallationID,
+            browserBundleIdentifier: browserBundleIdentifier
+        )
+        // 同一 service worker 再次 ready 时，旧验证不能替新端口背书；旧 timeout 也必须失效。
+        verifiedInstallations.remove(identity)
+        let supersededRequestIDs = pendingHandshakes.compactMap { requestID, value in
+            value == identity ? requestID : nil
+        }
+        for requestID in supersededRequestIDs {
+            pendingHandshakes[requestID] = nil
+            timedOutHandshakeRequestIDs.remove(requestID)
+        }
+
+        let requestID = UUID().uuidString
+        pendingHandshakes[requestID] = identity
+        let timeout = handshakeTimeout
+        let payload: Data
+        do {
+            payload = try JSONSerialization.data(withJSONObject: [
+                "type": "ping",
+                "requestID": requestID,
+                "extensionInstallationID": extensionInstallationID,
+            ])
+        } catch {
+            pendingHandshakes[requestID] = nil
+            statusContinuation.yield(
+                BrowserBridgeStatusUpdate(
+                    browserBundleIdentifier: browserBundleIdentifier,
+                    message: "浏览器扩展已启动，但双向通信不可用"
+                )
+            )
+            return
+        }
+
+        Task { [weak self] in
+            do {
+                guard let self else { return }
+                let recipientCount = try await self.sendPayload(
+                    payload,
+                    to: browserBundleIdentifier
+                )
+                Self.writeE2EDiagnostic("handshake ping broadcast recipients=\(recipientCount)")
+                guard recipientCount > 0 else {
+                    await self.failHandshake(requestID: requestID)
+                    return
+                }
+            } catch {
+                await self?.failHandshake(requestID: requestID)
+                return
+            }
+            try? await Task.sleep(for: timeout)
+            await self?.failHandshake(requestID: requestID)
+        }
+    }
+
+    /// 只有 request、installation 和操作系统验证过的 browser bundle 全部一致才确认连接。
+    private func finishHandshake(_ object: [String: Any]) {
+        guard let requestID = object["requestID"] as? String,
+              let expectedIdentity = pendingHandshakes[requestID],
+              let extensionInstallationID = object["extensionInstallationID"] as? String,
+              let browserBundleIdentifier = object["browserBundleIdentifier"] as? String,
+              expectedIdentity.extensionInstallationID == extensionInstallationID,
+              expectedIdentity.browserBundleIdentifier == browserBundleIdentifier
+        else {
+            return
+        }
+        pendingHandshakes = pendingHandshakes.filter { $0.value != expectedIdentity }
+        timedOutHandshakeRequestIDs.remove(requestID)
+        verifiedInstallations.insert(expectedIdentity)
+        Self.writeE2EDiagnostic("handshake verified")
+        statusContinuation.yield(
+            BrowserBridgeStatusUpdate(
+                browserBundleIdentifier: expectedIdentity.browserBundleIdentifier,
+                message: "浏览器扩展已连接"
+            )
+        )
+    }
+
+    private func failHandshake(requestID: String) {
+        guard let identity = pendingHandshakes[requestID],
+              timedOutHandshakeRequestIDs.insert(requestID).inserted
+        else {
+            return
+        }
+        Self.writeE2EDiagnostic("handshake timed out")
+        statusContinuation.yield(
+            BrowserBridgeStatusUpdate(
+                browserBundleIdentifier: identity.browserBundleIdentifier,
+                message: "浏览器扩展已启动，但双向通信不可用"
+            )
+        )
+    }
+
+    private func hasVerifiedInstallation(for browserBundleIdentifier: String) -> Bool {
+        verifiedInstallations.contains {
+            $0.browserBundleIdentifier == browserBundleIdentifier
+        }
+    }
+
+    /// 用户可能在 ready→pong 期间立即框选；等待当前握手比要求用户重新操作更可靠。
+    private func waitForVerifiedInstallation(
+        for browserBundleIdentifier: String
+    ) async -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: handshakeTimeout)
+        while ContinuousClock.now < deadline {
+            if hasVerifiedInstallation(for: browserBundleIdentifier) {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return hasVerifiedInstallation(for: browserBundleIdentifier)
+    }
+
+    /// Chromium 通过 loopback relay 广播；Safari 由 containing app 直接 dispatch 到嵌入式扩展。
+    private func sendPayload(
+        _ payload: Data,
+        to browserBundleIdentifier: String
+    ) async throws -> Int {
+        if browserBundleIdentifier == SafariBridgeMessageCodec.browserBundleIdentifier {
+            try await safariCommandDispatcher.dispatch(payload)
+            return 1
+        }
+        return try await server.broadcastPayload(payload)
+    }
+
+    /// Safari 的 dispatch completion 只代表系统接受了消息，不能证明休眠中的 worker 已执行命令。
+    /// 聚焦和解绑必须等待 WebExtension 返回带 requestID 的完成确认。
+    private func sendSafariCommandAwaitingAcknowledgement(
+        _ command: [String: Any],
+        requestID: String,
+        expectedAcknowledgement: String,
+        hookID: HookID,
+        target: BrowserTarget
+    ) async throws {
+        let payload = try JSONSerialization.data(withJSONObject: command)
+        let commandTimeout = commandAcknowledgementTimeout
+        try await withCheckedThrowingContinuation { continuation in
+            pendingTargetCommands[requestID] = PendingTargetCommand(
+                hookID: hookID,
+                extensionInstallationID: target.extensionInstallationID,
+                browserBundleIdentifier: target.browserBundleIdentifier,
+                expectedAcknowledgement: expectedAcknowledgement,
+                continuation: continuation
+            )
+            Task { [weak self] in
+                do {
+                    guard let self else { return }
+                    _ = try await self.sendPayload(payload, to: target.browserBundleIdentifier)
+                } catch {
+                    await self?.finishTargetCommand(requestID: requestID, error: error)
+                    return
+                }
+                try? await Task.sleep(for: commandTimeout)
+                await self?.finishTargetCommand(
+                    requestID: requestID,
+                    error: NativeBridgeError.disconnected
+                )
+            }
+        }
+    }
+
+    /// live E2E 只输出协议阶段和连接数量，不记录 URL、DOM、截图、installation ID 或 request ID。
+    private nonisolated static func writeE2EDiagnostic(_ message: String) {
+        guard e2eDiagnosticsEnabled else { return }
+        let timestampMilliseconds = Int(Date().timeIntervalSince1970 * 1_000)
+        try? FileHandle.standardError.write(
+            contentsOf: Data(
+                "AwaitCueBrowserRelay t=\(timestampMilliseconds) \(message)\n".utf8
+            )
+        )
     }
 
     private func handleTargetUnavailable(_ object: [String: Any]) {
@@ -266,6 +612,23 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             return
         }
         let hookID = HookID(rawValue: uuid)
+        if let requestID = object["requestID"] as? String,
+           let pendingBinding = pendingBindings[requestID],
+           pendingBinding.hookID == hookID,
+           pendingBinding.extensionInstallationID == installationID,
+           pendingBinding.browserBundleIdentifier == browserBundleIdentifier
+        {
+            finishBinding(requestID: requestID, error: NativeBridgeError.disconnected)
+            return
+        }
+        if let requestID = object["requestID"] as? String,
+           let pendingCommand = pendingTargetCommands[requestID],
+           pendingCommand.hookID == hookID,
+           pendingCommand.extensionInstallationID == installationID,
+           pendingCommand.browserBundleIdentifier == browserBundleIdentifier
+        {
+            finishTargetCommand(requestID: requestID, error: NativeBridgeError.disconnected)
+        }
         guard let binding = installationByHook[hookID],
               binding.extensionInstallationID == installationID,
               binding.browserBundleIdentifier == browserBundleIdentifier
@@ -275,6 +638,66 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         evidenceByHook[hookID] = nil
         installationByHook[hookID] = nil
         targetUnavailableContinuation.yield(hookID)
+    }
+
+    private func handleTargetBound(_ object: [String: Any]) {
+        guard let requestID = object["requestID"] as? String,
+              let pendingBinding = pendingBindings[requestID],
+              let hookIDString = object["hookID"] as? String,
+              UUID(uuidString: hookIDString) == pendingBinding.hookID.rawValue,
+              object["extensionInstallationID"] as? String
+                == pendingBinding.extensionInstallationID,
+              object["browserBundleIdentifier"] as? String
+                == pendingBinding.browserBundleIdentifier
+        else {
+            return
+        }
+        pendingBindings.removeValue(forKey: requestID)?.continuation.resume(returning: ())
+    }
+
+    private func handleTargetCommandAcknowledgement(
+        type: String,
+        object: [String: Any]
+    ) {
+        guard let requestID = object["requestID"] as? String,
+              let pendingCommand = pendingTargetCommands[requestID],
+              pendingCommand.expectedAcknowledgement == type,
+              let hookIDString = object["hookID"] as? String,
+              UUID(uuidString: hookIDString) == pendingCommand.hookID.rawValue,
+              object["extensionInstallationID"] as? String
+                == pendingCommand.extensionInstallationID,
+              object["browserBundleIdentifier"] as? String
+                == pendingCommand.browserBundleIdentifier
+        else {
+            return
+        }
+        pendingTargetCommands.removeValue(forKey: requestID)?.continuation.resume(returning: ())
+    }
+
+    private func handleTargetCommandError(_ object: [String: Any]) {
+        guard let requestID = object["requestID"] as? String,
+              let pendingCommand = pendingTargetCommands[requestID],
+              let hookIDString = object["hookID"] as? String,
+              UUID(uuidString: hookIDString) == pendingCommand.hookID.rawValue,
+              object["extensionInstallationID"] as? String
+                == pendingCommand.extensionInstallationID,
+              object["browserBundleIdentifier"] as? String
+                == pendingCommand.browserBundleIdentifier
+        else {
+            return
+        }
+        finishTargetCommand(requestID: requestID, error: NativeBridgeError.disconnected)
+    }
+
+    private func finishBinding(requestID: String, error: any Error) {
+        guard let binding = pendingBindings.removeValue(forKey: requestID) else { return }
+        installationByHook[binding.hookID] = nil
+        binding.continuation.resume(throwing: error)
+    }
+
+    private func finishTargetCommand(requestID: String, error: any Error) {
+        guard let command = pendingTargetCommands.removeValue(forKey: requestID) else { return }
+        command.continuation.resume(throwing: error)
     }
 
     private func handleDOMEvidence(_ object: [String: Any]) {
@@ -294,35 +717,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         else {
             return
         }
-        let previous = evidenceByHook[hookID]
-        evidenceByHook[hookID] = ModelEvidence(domText: domText, image: previous?.image)
-        evidenceUpdateContinuation.yield(hookID)
-    }
-
-    private func handleCaptureFrame(_ object: [String: Any]) {
-        guard let hookIDString = object["hookID"] as? String,
-              let installationID = object["extensionInstallationID"] as? String,
-              let browserBundleIdentifier = object["browserBundleIdentifier"] as? String,
-              let uuid = UUID(uuidString: hookIDString),
-              let dataURL = object["imageDataURL"] as? String,
-              let comma = dataURL.firstIndex(of: ","),
-              let imageData = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...]))
-        else {
-            return
-        }
-        let hookID = HookID(rawValue: uuid)
-        guard let binding = installationByHook[hookID],
-              binding.extensionInstallationID == installationID,
-              binding.browserBundleIdentifier == browserBundleIdentifier
-        else {
-            return
-        }
-        let previous = evidenceByHook[hookID]
-        evidenceByHook[hookID] = ModelEvidence(
-            text: previous?.contextText,
-            domText: previous?.domText,
-            image: ModelImage(data: imageData, mediaType: "image/jpeg")
-        )
+        evidenceByHook[hookID] = ModelEvidence(domText: domText)
         evidenceUpdateContinuation.yield(hookID)
     }
 
@@ -375,7 +770,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             initialURL: url,
             initialTitle: title,
             normalizedRegion: region,
-            observationMode: .domAndImage
+            observationMode: .dom
         )
         if let evidence = target["evidence"] as? [String: Any],
            let domText = Self.domText(from: evidence)
@@ -400,11 +795,22 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
+        let insufficiency: String? = if evidence["availability"] as? String == "insufficient" {
+            switch evidence["insufficiencyReason"] as? String {
+            case "no_semantic_content":
+                "页面内容不足：框选区域没有可供判断的文字、ARIA 或语义状态属性；不得使用截图推测。"
+            default:
+                "页面内容不足：浏览器扩展无法读取足够的语义证据；不得使用截图推测。"
+            }
+        } else {
+            nil
+        }
         let parts = [
             title.map { "页面标题：\($0)" },
             url.map { "页面 URL：\($0)" },
             text.map { "框选内容（坐标相对于选区左上角，单位为 CSS 像素）：\n\($0)" },
             semantics.map { "语义属性：\n\($0)" },
+            insufficiency,
         ].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }
@@ -490,7 +896,8 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         return region.isValid ? region : nil
     }
 
-    private static let chromiumBundleIdentifiers: Set<String> = [
+    private static let browserBundleIdentifiers: Set<String> = [
+        SafariBridgeMessageCodec.browserBundleIdentifier,
         "com.google.Chrome",
         "com.google.Chrome.beta",
         "com.google.Chrome.dev",

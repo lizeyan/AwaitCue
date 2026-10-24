@@ -49,8 +49,8 @@ body:
       label: Target type
       options:
         - macOS window
+        - Safari DOM
         - Chromium DOM
-        - Chromium tabCapture
         - Model connection
         - Notification
         - Other

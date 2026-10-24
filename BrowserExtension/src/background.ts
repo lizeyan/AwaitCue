@@ -1,4 +1,3 @@
-import { CaptureSessionManager, type CaptureBackend, type CaptureStart } from "./captureSession";
 import { tabIdentityMatches, uniqueFocusedActiveHost, uniqueMatchingWindow } from "./browserSelection";
 import {
   nativeHostName,
@@ -17,81 +16,52 @@ type HookBinding = Readonly<{
   expectedHost: string;
   expectedURL: string;
   region: NormalizedRegion;
-  requirePixels: boolean;
 }>;
 const hookBindings = new Map<string, HookBinding>();
-const pendingCaptures = new Map<string, { tabID: number; region: NormalizedRegion }>();
+let recentlyFocusedTab: Readonly<{
+  tab: chrome.tabs.Tab;
+  windowFrame: Readonly<{ x: number; y: number; width: number; height: number }>;
+  observedAt: number;
+}> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelayMilliseconds = 1_000;
 const installationIdentityPromise = installationIdentity();
 
-const offscreenBackend: CaptureBackend = {
-  async start(request) {
-    await ensureOffscreenDocument();
-    const response = await chrome.runtime.sendMessage({ type: "awaitcue.capture.start", request });
-    if (!response?.ok) throw new Error(response?.message ?? "Unable to start tab capture");
-  },
-  async stop(hookID) {
-    await chrome.runtime.sendMessage({ type: "awaitcue.capture.stop", hookID });
-  }
-};
-const captureSessions = new CaptureSessionManager(offscreenBackend);
-
 chrome.runtime.onInstalled.addListener(() => connectNative());
 chrome.runtime.onStartup.addListener(() => connectNative());
-chrome.action.onClicked.addListener((tab) => {
+chrome.action.onClicked.addListener(() => {
   connectNative();
-  if (typeof tab.id === "number") {
-    void postReady();
-    for (const [hookID, pending] of pendingCaptures) {
-      if (pending.tabID !== tab.id) continue;
-      void startTabCapture(hookID, pending.tabID, pending.region).then(
-        () => {
-          pendingCaptures.delete(hookID);
-          postEvent({ type: "captureAuthorized", hookID, tabID: pending.tabID });
-        },
-        (error: unknown) => {
-          postEvent({
-            type: "error",
-            hookID,
-            code: "capture_authorization_failed",
-            message: error instanceof Error ? error.message : String(error)
-          });
-        }
-      );
-    }
-  }
+  void postReady();
 });
 
-chrome.runtime.onMessage.addListener((message: unknown) => {
+chrome.runtime.onMessage.addListener((message: unknown, sender) => {
   if (!isRecord(message) || !nativePort) return;
-  if (message.type === "awaitcue.evidence" && isEvidence(message.evidence)) {
-    const evidence = message.evidence;
+  if (
+    message.type === "awaitcue.focusedTab" &&
+    sender.tab &&
+    typeof sender.tab.id === "number" &&
+    typeof sender.tab.windowId === "number" &&
+    isRecord(message.windowFrame) &&
+    isScreenFrame(message.windowFrame)
+  ) {
+    recentlyFocusedTab = {
+      tab: sender.tab,
+      windowFrame: message.windowFrame,
+      observedAt: Date.now()
+    };
+    return;
+  }
+  if (message.type === "awaitcue.evidence") {
+    const evidence = normalizeEvidence(message.evidence);
+    if (!evidence) return;
     void installationIdentityPromise.then((extensionInstallationID) => {
       postEvent({ type: "evidenceChanged", extensionInstallationID, evidence });
-    });
-  } else if (
-    message.type === "awaitcue.capture.frame" &&
-    typeof message.hookID === "string" &&
-    typeof message.imageDataURL === "string" &&
-    typeof message.fingerprint === "string"
-  ) {
-    const hookID = message.hookID;
-    const imageDataURL = message.imageDataURL;
-    const fingerprint = message.fingerprint;
-    void installationIdentityPromise.then((extensionInstallationID) => {
-      postEvent({
-        type: "captureFrame",
-        extensionInstallationID,
-        hookID,
-        imageDataURL,
-        fingerprint
-      });
     });
   }
 });
 
 chrome.tabs.onRemoved.addListener((tabID) => {
+  if (recentlyFocusedTab?.tab.id === tabID) recentlyFocusedTab = null;
   for (const [hookID, binding] of hookBindings) {
     if (binding.tabID !== tabID) continue;
     void markTargetUnavailable(hookID, "tab_closed");
@@ -135,14 +105,18 @@ function connectNative(): void {
   }
   const port = chrome.runtime.connectNative(nativeHostName);
   nativePort = port;
-  port.onMessage.addListener((message: unknown) => void handleNativeCommand(message));
+  port.onMessage.addListener((message: unknown) => {
+    // 断线重连后旧 port 仍可能排队投递消息，不能让它借新 port 回包并污染新连接状态。
+    if (nativePort !== port) return;
+    void handleNativeCommand(message);
+  });
   port.onDisconnect.addListener(() => {
+    if (nativePort !== port) return;
     nativePort = null;
     void clearAllBindings();
     scheduleReconnect();
   });
-  // service worker 重启会丢失内存中的 CaptureSessionManager；先让 offscreen 自行清理孤儿流。
-  void stopOrphanedCaptures().finally(() => postReady());
+  void postReady();
 }
 
 async function handleNativeCommand(value: unknown): Promise<void> {
@@ -159,7 +133,13 @@ async function handleNativeCommand(value: unknown): Promise<void> {
       return;
     }
     if (command.type === "ping") {
-      postEvent({ type: "pong" });
+      // 广播会抵达所有浏览器 profile；只有 ready 对应的 installation 才能完成这次双向检查。
+      if (command.extensionInstallationID !== (await installationIdentityPromise)) return;
+      postEvent({
+        type: "pong",
+        requestID: command.requestID,
+        extensionInstallationID: command.extensionInstallationID
+      });
     } else if (command.type === "resolveActiveHost") {
       await resolveActiveHost(command.requestID);
     } else if (command.type === "resolveSelection") {
@@ -176,6 +156,10 @@ async function handleNativeCommand(value: unknown): Promise<void> {
       postSelectionFailure(command.requestID, "page_access_unavailable");
       return;
     }
+    if (command.type === "bindTarget") {
+      await markTargetUnavailable(command.hookID, "content_bind_failed", command.requestID);
+      return;
+    }
     const event: ExtensionEvent = {
       type: "error",
       code: "command_failed",
@@ -186,8 +170,15 @@ async function handleNativeCommand(value: unknown): Promise<void> {
 }
 
 async function resolveActiveHost(requestID: string): Promise<void> {
-  const windows = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
-  const context = uniqueFocusedActiveHost(windows);
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const focusedWindow: chrome.windows.Window | null = typeof tab?.windowId === "number"
+    ? await chrome.windows.get(tab.windowId)
+    : null;
+  const context = uniqueFocusedActiveHost([{
+    ...(focusedWindow ?? {}),
+    focused: true,
+    tabs: tab ? [tab] : []
+  }]);
   if (!context) {
     postEvent({
       type: "activeHostResolved",
@@ -209,11 +200,26 @@ async function resolveActiveHost(requestID: string): Promise<void> {
 }
 
 async function resolveSelection(command: Extract<NativeCommand, { type: "resolveSelection" }>): Promise<void> {
-  const windows = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
-  const matchingWindow = uniqueMatchingWindow(
+  const cachedMatch = recentlyFocusedTab
+    && Date.now() - recentlyFocusedTab.observedAt <= 30_000
+    ? uniqueMatchingWindow(command.windowFrame, [{
+        ...recentlyFocusedTab.windowFrame,
+        tab: recentlyFocusedTab.tab
+      }])
+    : null;
+  let tab = cachedMatch?.tab;
+  let focusedWindow: chrome.windows.Window | null = null;
+  if (!tab) {
+    [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    focusedWindow = typeof tab?.windowId === "number"
+      ? await chrome.windows.get(tab.windowId)
+      : null;
+  }
+  const matchingWindow = cachedMatch ?? uniqueMatchingWindow(
     command.windowFrame,
-    windows.flatMap((candidate) => {
+    [focusedWindow].flatMap((candidate) => {
       if (
+        candidate === null ||
         typeof candidate.left !== "number" ||
         typeof candidate.top !== "number" ||
         typeof candidate.width !== "number" ||
@@ -222,7 +228,6 @@ async function resolveSelection(command: Extract<NativeCommand, { type: "resolve
         return [];
       }
       return [{
-        window: candidate,
         x: candidate.left,
         y: candidate.top,
         width: candidate.width,
@@ -234,7 +239,6 @@ async function resolveSelection(command: Extract<NativeCommand, { type: "resolve
     postSelectionFailure(command.requestID, "window_not_matched");
     return;
   }
-  const tab = matchingWindow.window.tabs?.find((candidate) => candidate.active && typeof candidate.id === "number");
   if (typeof tab?.id !== "number" || typeof tab.url !== "string") {
     postSelectionFailure(command.requestID, "active_tab_unavailable");
     return;
@@ -252,14 +256,16 @@ async function resolveSelection(command: Extract<NativeCommand, { type: "resolve
     return;
   }
 
-  await ensureHostPermission(tab.id);
-  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
-  const response: unknown = await chrome.tabs.sendMessage(tab.id, {
+  if (!cachedMatch) {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+  }
+  const rawResponse: unknown = await chrome.tabs.sendMessage(tab.id, {
     type: "awaitcue.resolveSelection",
     requestID: command.requestID,
     selectionRect: command.selectionRect
   });
-  if (!isResolvedSelectionResponse(response)) {
+  const response = normalizeResolvedSelectionResponse(rawResponse);
+  if (!response) {
     postSelectionFailure(command.requestID, "invalid_page_response");
     return;
   }
@@ -281,6 +287,17 @@ async function resolveSelection(command: Extract<NativeCommand, { type: "resolve
       ...(response.evidence ? { evidence: response.evidence } : {})
     }
   });
+}
+
+function isScreenFrame(value: Record<string, unknown>): value is {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  return [value.x, value.y, value.width, value.height].every(
+    (entry) => typeof entry === "number" && Number.isFinite(entry)
+  ) && (value.width as number) > 0 && (value.height as number) > 0;
 }
 
 function postSelectionFailure(requestID: string, reason: SelectionFailureReason): void {
@@ -319,30 +336,30 @@ async function bind(command: Extract<NativeCommand, { type: "bindTarget" }>): Pr
     tab = await chrome.tabs.get(command.tabID);
   } catch {
     // 重新启动浏览器后持久化 tab ID 不会自动指向同 URL 的新 tab；必须把原 Target 标成不可用。
-    await markTargetUnavailable(command.hookID, "tab_closed");
+    await markTargetUnavailable(command.hookID, "tab_closed", command.requestID);
     return;
   }
-  await ensureHostPermission(command.tabID);
   if (!tab.url) throw new Error("Target tab has no URL");
   if (!tabIdentityMatches(tab.url, command.expectedURL, command.expectedHost)) {
-    await markTargetUnavailable(command.hookID, "tab_identity_mismatch");
+    await markTargetUnavailable(command.hookID, "tab_identity_mismatch", command.requestID);
     return;
   }
   const binding: HookBinding = {
     tabID: command.tabID,
     expectedHost: command.expectedHost,
     expectedURL: command.expectedURL,
-    region: command.region,
-    requirePixels: command.requirePixels
+    region: command.region
   };
   await installContentBinding(command.hookID, binding);
   hookBindings.set(command.hookID, binding);
 
-  if (command.requirePixels) {
-    pendingCaptures.set(command.hookID, { tabID: command.tabID, region: command.region });
-    postEvent({ type: "captureAuthorizationRequired", hookID: command.hookID, tabID: command.tabID });
-  }
-  postEvent({ type: "targetBound", hookID: command.hookID, tabID: command.tabID });
+  postEvent({
+    type: "targetBound",
+    requestID: command.requestID,
+    extensionInstallationID: await installationIdentityPromise,
+    hookID: command.hookID,
+    tabID: command.tabID
+  });
 }
 
 async function focusTarget(command: Extract<NativeCommand, { type: "focusTarget" }>): Promise<void> {
@@ -367,30 +384,17 @@ async function unbind(hookID: string): Promise<void> {
     }
   }
   hookBindings.delete(hookID);
-  pendingCaptures.delete(hookID);
-  await captureSessions.stop(hookID);
 }
 
-/** Native app 离线时停止 DOM observer 和像素捕获；重连后由 app 从持久化 Hook 重新绑定。 */
+/** Native app 离线时停止 DOM observer；重连后由 app 从持久化 Hook 重新绑定。 */
 async function clearAllBindings(): Promise<void> {
   const bindings = [...hookBindings.entries()];
   hookBindings.clear();
-  pendingCaptures.clear();
   await Promise.allSettled(
     bindings.map(([hookID, binding]) =>
       chrome.tabs.sendMessage(binding.tabID, { type: "awaitcue.unbind", hookID })
     )
   );
-  await captureSessions.stopAll();
-  await stopOrphanedCaptures();
-}
-
-async function stopOrphanedCaptures(): Promise<void> {
-  try {
-    await chrome.runtime.sendMessage({ type: "awaitcue.capture.stopAll" });
-  } catch {
-    // offscreen document 尚未创建时没有接收方，等价于没有需要清理的流。
-  }
 }
 
 async function installContentBinding(hookID: string, binding: HookBinding): Promise<void> {
@@ -402,39 +406,18 @@ async function installContentBinding(hookID: string, binding: HookBinding): Prom
   });
 }
 
-async function markTargetUnavailable(hookID: string, reason: string): Promise<void> {
+async function markTargetUnavailable(
+  hookID: string,
+  reason: string,
+  requestID?: string
+): Promise<void> {
   hookBindings.delete(hookID);
-  pendingCaptures.delete(hookID);
-  await captureSessions.stop(hookID);
   postEvent({
     type: "targetUnavailable",
     extensionInstallationID: await installationIdentityPromise,
     hookID,
-    reason
-  });
-}
-
-async function startTabCapture(hookID: string, tabID: number, region: NormalizedRegion): Promise<void> {
-  const streamID = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabID });
-  const request: CaptureStart = { hookID, streamID, region };
-  await captureSessions.start(request);
-}
-
-async function ensureHostPermission(tabID: number): Promise<void> {
-  const tab = await chrome.tabs.get(tabID);
-  if (!tab.url) throw new Error("Target tab has no URL");
-  const url = new URL(tab.url);
-  const origin = `${url.protocol}//${url.host}/*`;
-  if (await chrome.permissions.contains({ origins: [origin] })) return;
-  throw new Error("The extension does not have install-time permission for the target host");
-}
-
-async function ensureOffscreenDocument(): Promise<void> {
-  if (await chrome.offscreen.hasDocument()) return;
-  await chrome.offscreen.createDocument({
-    url: "offscreen.html",
-    reasons: [chrome.offscreen.Reason.USER_MEDIA],
-    justification: "Capture the user-approved AwaitCue tab region while the tab is in the background."
+    reason,
+    ...(requestID ? { requestID } : {})
   });
 }
 
@@ -446,30 +429,56 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isEvidence(value: unknown): value is Evidence {
-  return (
-    isRecord(value) &&
-    typeof value.hookID === "string" &&
-    typeof value.url === "string" &&
-    typeof value.title === "string" &&
-    typeof value.text === "string" &&
-    Array.isArray(value.aria) &&
-    value.aria.every((entry) => typeof entry === "string") &&
-    typeof value.fingerprint === "string"
-  );
+function normalizeEvidence(value: unknown): Evidence | null {
+  if (
+    !isRecord(value) ||
+    typeof value.hookID !== "string" ||
+    typeof value.url !== "string" ||
+    typeof value.title !== "string" ||
+    typeof value.text !== "string" ||
+    !Array.isArray(value.aria) ||
+    !value.aria.every((entry) => typeof entry === "string") ||
+    typeof value.fingerprint !== "string"
+  ) {
+    return null;
+  }
+  // 是否足够只能由实际页面证据决定，不能信任跨进程消息里自报的状态。
+  const availability = value.text || value.aria.length > 0 ? "sufficient" : "insufficient";
+  const insufficiencyReason = availability === "insufficient" ? "no_semantic_content" : undefined;
+  return {
+    hookID: value.hookID,
+    url: value.url,
+    title: value.title,
+    text: value.text,
+    aria: value.aria,
+    availability,
+    ...(insufficiencyReason ? { insufficiencyReason } : {}),
+    fingerprint: value.fingerprint
+  };
 }
 
-function isResolvedSelectionResponse(value: unknown): value is {
+function normalizeResolvedSelectionResponse(value: unknown): {
   matched: boolean;
   region?: NormalizedRegion;
   title: string;
   evidence?: Evidence;
-} {
-  return (
-    isRecord(value) &&
-    typeof value.matched === "boolean" &&
-    typeof value.title === "string" &&
-    (value.region === null || value.region === undefined || isNormalizedRegion(value.region)) &&
-    (value.evidence === null || value.evidence === undefined || isEvidence(value.evidence))
-  );
+} | null {
+  if (
+    !isRecord(value) ||
+    typeof value.matched !== "boolean" ||
+    typeof value.title !== "string" ||
+    !(value.region === null || value.region === undefined || isNormalizedRegion(value.region))
+  ) {
+    return null;
+  }
+  const evidence = value.evidence === null || value.evidence === undefined
+    ? undefined
+    : normalizeEvidence(value.evidence);
+  if (value.evidence !== null && value.evidence !== undefined && !evidence) return null;
+  return {
+    matched: value.matched,
+    ...(isNormalizedRegion(value.region) ? { region: value.region } : {}),
+    title: value.title,
+    ...(evidence ? { evidence } : {})
+  };
 }

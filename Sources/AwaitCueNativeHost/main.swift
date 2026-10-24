@@ -64,12 +64,22 @@ struct AwaitCueNativeHostMain {
 
     /// 菜单栏应用返回的是 JSON payload；native host 只负责重新添加 Chromium 帧前缀。
     private static func forwardAppMessages(from client: NativeBridgeClient) async throws {
+        let outputWriter = FileDescriptorChunkWriter(fileDescriptor: STDOUT_FILENO)
         for await payload in client.incomingMessages {
-            try FileHandle.standardOutput.write(contentsOf: NativeMessagingFrameCodec.encodePayload(payload))
+            try outputWriter.write(NativeMessagingFrameCodec.encodePayload(payload))
         }
     }
 
     private static func descriptorURL() -> URL {
+#if DEBUG
+        // 真实进程 E2E 必须连接测试进程临时启动的 relay，而不能误连用户正在运行的 AwaitCue。
+        // 该覆盖仅编译进 Debug 构建，正式分发版本始终使用 Application Support 中的 descriptor。
+        if let path = ProcessInfo.processInfo.environment["AWAITCUE_E2E_DESCRIPTOR_PATH"],
+           !path.isEmpty
+        {
+            return URL(fileURLWithPath: path)
+        }
+#endif
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return support
             .appendingPathComponent("AwaitCue", isDirectory: true)
@@ -78,6 +88,18 @@ struct AwaitCueNativeHostMain {
 
     /// Native host 的父应用由操作系统提供，比扩展自报 user-agent 更适合作为 Chrome/Arc 身份边界。
     private static func launchingBrowserBundleIdentifier() throws -> String {
+#if DEBUG
+        // XCTest 直接启动 host 时父进程不是浏览器；显式测试变量只允许映射到受支持的 Chromium 身份。
+        if let requestedBundleIdentifier = ProcessInfo.processInfo.environment[
+            "AWAITCUE_E2E_BROWSER_BUNDLE_ID"
+        ],
+            let browserBundleIdentifier = BrowserParentIdentity.canonicalBundleIdentifier(
+                requestedBundleIdentifier
+            )
+        {
+            return browserBundleIdentifier
+        }
+#endif
         let parentPID = getppid()
         if let parentBundleIdentifier = NSRunningApplication(
             processIdentifier: parentPID

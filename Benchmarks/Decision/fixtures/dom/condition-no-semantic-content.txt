@@ -1,0 +1,3 @@
+页面标题：Canvas deployment
+页面 URL：https://example.invalid/deployment
+页面内容不足：框选区域没有可供判断的文字、ARIA 或语义状态属性；不得使用截图推测。

@@ -9,13 +9,13 @@ export type NormalizedRegion = Readonly<{
 
 export type BindTargetCommand = Readonly<{
   type: "bindTarget";
+  requestID: string;
   extensionInstallationID: string;
   hookID: string;
   tabID: number;
   expectedHost: string;
   expectedURL: string;
   region: NormalizedRegion;
-  requirePixels: boolean;
 }>;
 
 export type UnbindTargetCommand = Readonly<{
@@ -54,13 +54,19 @@ export type ResolveActiveHostCommand = Readonly<{
   requestID: string;
 }>;
 
+export type PingCommand = Readonly<{
+  type: "ping";
+  requestID: string;
+  extensionInstallationID: string;
+}>;
+
 export type NativeCommand =
   | BindTargetCommand
   | UnbindTargetCommand
   | FocusTargetCommand
   | ResolveSelectionCommand
   | ResolveActiveHostCommand
-  | Readonly<{ type: "ping" }>;
+  | PingCommand;
 
 export type Evidence = Readonly<{
   hookID: string;
@@ -68,24 +74,33 @@ export type Evidence = Readonly<{
   title: string;
   text: string;
   aria: string[];
+  availability: "sufficient" | "insufficient";
+  insufficiencyReason?: "no_semantic_content";
   fingerprint: string;
 }>;
 
 export type ExtensionEvent =
   | Readonly<{ type: "ready"; browser: string; extensionInstallationID: string }>
-  | Readonly<{ type: "pong" }>
-  | Readonly<{ type: "targetBound"; hookID: string; tabID: number }>
-  | Readonly<{ type: "targetUnavailable"; extensionInstallationID: string; hookID: string; reason: string }>
-  | Readonly<{ type: "evidenceChanged"; extensionInstallationID: string; evidence: Evidence }>
   | Readonly<{
-      type: "captureFrame";
+      type: "pong";
+      requestID: string;
+      extensionInstallationID: string;
+    }>
+  | Readonly<{
+      type: "targetBound";
+      requestID: string;
       extensionInstallationID: string;
       hookID: string;
-      imageDataURL: string;
-      fingerprint: string;
+      tabID: number;
     }>
-  | Readonly<{ type: "captureAuthorizationRequired"; hookID: string; tabID: number }>
-  | Readonly<{ type: "captureAuthorized"; hookID: string; tabID: number }>
+  | Readonly<{
+      type: "targetUnavailable";
+      requestID?: string;
+      extensionInstallationID: string;
+      hookID: string;
+      reason: string;
+    }>
+  | Readonly<{ type: "evidenceChanged"; extensionInstallationID: string; evidence: Evidence }>
   | Readonly<{
       type: "activeHostResolved";
       requestID: string;
@@ -122,7 +137,17 @@ export type ExtensionEvent =
  */
 export function parseNativeCommand(value: unknown): NativeCommand | null {
   if (!isRecord(value) || typeof value.type !== "string") return null;
-  if (value.type === "ping") return { type: "ping" };
+  if (
+    value.type === "ping" &&
+    typeof value.requestID === "string" &&
+    typeof value.extensionInstallationID === "string"
+  ) {
+    return {
+      type: "ping",
+      requestID: value.requestID,
+      extensionInstallationID: value.extensionInstallationID
+    };
+  }
   if (value.type === "resolveActiveHost" && typeof value.requestID === "string") {
     return { type: "resolveActiveHost", requestID: value.requestID };
   }
@@ -169,23 +194,23 @@ export function parseNativeCommand(value: unknown): NativeCommand | null {
   }
   if (
     value.type === "bindTarget" &&
+    typeof value.requestID === "string" &&
     typeof value.extensionInstallationID === "string" &&
     typeof value.hookID === "string" &&
     typeof value.tabID === "number" &&
     typeof value.expectedHost === "string" &&
     typeof value.expectedURL === "string" &&
-    typeof value.requirePixels === "boolean" &&
     isNormalizedRegion(value.region)
   ) {
     return {
       type: "bindTarget",
+      requestID: value.requestID,
       extensionInstallationID: value.extensionInstallationID,
       hookID: value.hookID,
       tabID: value.tabID,
       expectedHost: value.expectedHost,
       expectedURL: value.expectedURL,
-      region: value.region,
-      requirePixels: value.requirePixels
+      region: value.region
     };
   }
   return null;

@@ -2,7 +2,26 @@ import type { Evidence, NormalizedRegion } from "./protocol";
 import { denormalizeRegion, intersects } from "./region";
 
 const maximumTextLength = 4_000;
-const observedAttributes = ["aria-label", "aria-valuenow", "aria-valuetext", "role", "title", "alt"];
+const evidenceAttributes = [
+  "aria-label",
+  "aria-valuenow",
+  "aria-valuetext",
+  "aria-checked",
+  "aria-selected",
+  "aria-busy",
+  "aria-current",
+  "aria-disabled",
+  "aria-expanded",
+  "aria-pressed",
+  "role",
+  "title",
+  "alt",
+  "data-state",
+  "data-status",
+  "value",
+  "max"
+];
+const mutationAttributes = [...evidenceAttributes, "class"];
 const ignoredTextParentTags = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"]);
 const semanticClassPattern = /(success|succeed|done|complete|check|fail|error|running|loading|pending|wait|ignored|disabled|status|progress)/i;
 
@@ -44,7 +63,7 @@ export function collectEvidence(
   for (const element of document.querySelectorAll<HTMLElement>("body *")) {
     const rect = element.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0 || !intersects(rect, pixelRegion)) continue;
-    for (const attribute of observedAttributes) {
+    for (const attribute of evidenceAttributes) {
       const value = normalizeText(element.getAttribute(attribute) ?? "");
       if (!value) continue;
       const semantic = `${attribute}:${value}`;
@@ -76,13 +95,19 @@ export function collectEvidence(
     return [`[${row.x},${row.y}] ${row.text}`];
   }).join("\n").slice(0, maximumTextLength);
   const ariaValues = [...aria].sort().slice(0, 100);
+  const availability = text || ariaValues.length > 0 ? "sufficient" : "insufficient";
+  const insufficiencyReason = availability === "insufficient" ? "no_semantic_content" : undefined;
   return {
     hookID,
     url: document.location.href,
     title: document.title,
     text,
     aria: ariaValues,
-    fingerprint: fingerprint(`${document.location.href}\n${document.title}\n${text}\n${ariaValues.join("\n")}`)
+    availability,
+    ...(insufficiencyReason ? { insufficiencyReason } : {}),
+    fingerprint: fingerprint(
+      `${document.location.href}\n${document.title}\n${availability}\n${text}\n${ariaValues.join("\n")}`
+    )
   };
 }
 
@@ -112,7 +137,7 @@ export class EvidenceObserver {
       childList: true,
       characterData: true,
       subtree: true,
-      attributeFilter: observedAttributes
+      attributeFilter: mutationAttributes
     });
     return initial;
   }

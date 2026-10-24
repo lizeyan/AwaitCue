@@ -5,6 +5,7 @@ import AwaitCueCore
 import AwaitCueModel
 import AwaitCuePersistence
 import AwaitCueRuntime
+import AwaitCueSafariBridge
 import AwaitCueSelection
 import CoreGraphics
 import Foundation
@@ -34,7 +35,9 @@ final class AwaitCueApplicationModel: ObservableObject {
     @Published var excludedBrowserHostsText: String {
         didSet { persistPrivacyExclusionConfiguration() }
     }
-    @Published private(set) var browserBridgeStatus = "等待扩展连接"
+    @Published private(set) var chromiumBridgeStatus = "等待扩展连接"
+    @Published private(set) var safariBridgeStatus = "等待扩展连接"
+    @Published private(set) var safariExtensionStatus = "未检查"
     @Published private(set) var setupActionError: String?
     @Published var pendingTarget: HookTarget?
     @Published private(set) var isSelectingTarget = false
@@ -47,6 +50,7 @@ final class AwaitCueApplicationModel: ObservableObject {
     private let notificationClient = SystemNotificationClient()
     private let bridgeServer: NativeBridgeServer
     private let browserSelectionRelay: NativeBrowserSelectionRelay
+    private let safariExtensionDispatcher: SafariExtensionCommandDispatcher
     private let selectionController: GlobalSelectionController
     private let privacyExclusionStore: AppPrivacyExclusionStore
     private let keychainStore = KeychainSecretStore(service: "org.awaitcue.model")
@@ -88,16 +92,23 @@ final class AwaitCueApplicationModel: ObservableObject {
             )
         )
         let bridgeServer = NativeBridgeServer()
-        let browserSelectionRelay = NativeBrowserSelectionRelay(server: bridgeServer)
+        let safariExtensionDispatcher = SafariExtensionCommandDispatcher()
+        let browserSelectionRelay = NativeBrowserSelectionRelay(
+            server: bridgeServer,
+            safariCommandDispatcher: safariExtensionDispatcher
+        )
         self.bridgeServer = bridgeServer
         self.browserSelectionRelay = browserSelectionRelay
+        self.safariExtensionDispatcher = safariExtensionDispatcher
         selectionController = GlobalSelectionController(browserRelay: browserSelectionRelay)
 
         do {
             let directory = try Self.applicationSupportDirectory()
             let repository = try SQLiteHookRepository(databaseURL: directory.appendingPathComponent("awaitcue.sqlite3"))
             coordinator = HookCoordinator(repository: repository)
-            apiKey = try keychainStore.load(account: apiKeyAccount) ?? ""
+            apiKey = Self.shouldAccessKeychain(
+                environment: ProcessInfo.processInfo.environment
+            ) ? try keychainStore.load(account: apiKeyAccount) ?? "" : ""
             modelStatus = apiKey.isEmpty || !confirmedAPIHostname ? .notConfigured : .connected
         } catch {
             coordinator = nil
@@ -115,6 +126,11 @@ final class AwaitCueApplicationModel: ObservableObject {
 
     var apiHostname: String? {
         URL(string: modelBaseURL)?.host
+    }
+
+    /// 只有本机 live E2E 的显式环境标记可以隔离 Keychain；普通和发布启动始终读取真实密钥。
+    nonisolated static func shouldAccessKeychain(environment: [String: String]) -> Bool {
+        environment["AWAITCUE_E2E_SKIP_KEYCHAIN"] != "1"
     }
 
     func isBrowserInstalled(_ family: BrowserExtensionFamily) -> Bool {
@@ -152,6 +168,29 @@ final class AwaitCueApplicationModel: ObservableObject {
         }
     }
 
+    /// 打开 Safari 扩展设置；启用扩展与网站访问权限始终由用户亲自确认。
+    func openSafariExtensionPreferences() {
+        setupActionError = nil
+        Task {
+            do {
+                try await safariExtensionDispatcher.showPreferences()
+                await refreshSafariExtensionStatus()
+            } catch {
+                setupActionError = "无法打开 Safari 扩展设置：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    func refreshSafariExtensionStatus() async {
+        do {
+            safariExtensionStatus = try await safariExtensionDispatcher.isEnabled()
+                ? "已启用"
+                : "未启用"
+        } catch {
+            safariExtensionStatus = "不可用"
+        }
+    }
+
     func openSystemSettings(_ destination: SystemSettingsDestination) {
         setupActionError = nil
         guard NSWorkspace.shared.open(destination.url) else {
@@ -174,17 +213,35 @@ final class AwaitCueApplicationModel: ObservableObject {
             }
             let descriptor = try await bridgeServer.start()
             try descriptor.write(to: try Self.nativeBridgeDescriptorURL())
+            let safariContainerURL = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: AwaitCueSafariBridgeConfiguration.appGroupIdentifier
+            )
+            safariBridgeStatus = Self.safariBridgeStartupStatus(
+                containerURL: safariContainerURL
+            )
+            if let safariDescriptorURL = Self.safariNativeBridgeDescriptorURL(
+                containerURL: safariContainerURL
+            ) {
+                try descriptor.write(to: safariDescriptorURL)
+            }
             await browserSelectionRelay.start()
             bridgeStatusTask = Task { [weak self] in
                 guard let self else { return }
                 for await status in browserSelectionRelay.statuses {
-                    browserBridgeStatus = status
-                    if status == "Chromium 扩展已连接" {
+                    if status.browserBundleIdentifier
+                        == SafariBridgeMessageCodec.browserBundleIdentifier
+                    {
+                        safariBridgeStatus = status.message
+                    } else if status.browserBundleIdentifier != nil {
+                        chromiumBridgeStatus = status.message
+                    }
+                    if status.message == "浏览器扩展已连接" {
                         try? await restoreBrowserBindings()
                     }
                 }
             }
             try await restoreBrowserBindings()
+            await refreshSafariExtensionStatus()
             await configureRuntimeIfPossible()
             configureGlobalHotKey()
             startWorkspaceEventMonitoring()
@@ -259,7 +316,7 @@ final class AwaitCueApplicationModel: ObservableObject {
         {
             try? await browserSelectionRelay.unbind(
                 hookID: hook.id,
-                extensionInstallationID: browser.extensionInstallationID
+                target: browser
             )
         }
     }
@@ -269,7 +326,7 @@ final class AwaitCueApplicationModel: ObservableObject {
         if case let .browser(browser) = hook.target {
             try? await browserSelectionRelay.unbind(
                 hookID: hook.id,
-                extensionInstallationID: browser.extensionInstallationID
+                target: browser
             )
         }
         await apply(.cancelled(at: .now), to: hook)
@@ -352,11 +409,11 @@ final class AwaitCueApplicationModel: ObservableObject {
                     currentDecision: prepared.currentDecision,
                     confidence: prepared.confidence
                 )
-            case let .browser(browser):
-                // Chromium 页面同时依赖可读内容与视觉状态；不能让模型把其中一种误判为足够。
+            case .browser:
+                // 所有浏览器 Target 只使用页面内容；模型不能要求扩展补充截图。
                 PreparedCondition(
                     confirmedSummary: prepared.confirmedSummary,
-                    requiredEvidence: browser.observationMode.evidenceRequirement,
+                    requiredEvidence: .dom,
                     currentDecision: prepared.currentDecision,
                     confidence: prepared.confidence
                 )
@@ -390,8 +447,7 @@ final class AwaitCueApplicationModel: ObservableObject {
                 do {
                     try await browserSelectionRelay.bind(
                         hookID: hook.id,
-                        target: browserTarget,
-                        requirePixels: browserTarget.observationMode.evidenceRequirement != .dom
+                        target: browserTarget
                     )
                 } catch {
                     // 创建对用户是一个整体操作；bind 失败时必须把已经落盘的 Hook 一并回滚。
@@ -446,7 +502,7 @@ final class AwaitCueApplicationModel: ObservableObject {
                 if case let .browser(browser) = hook.target {
                     try? await browserSelectionRelay.unbind(
                         hookID: hook.id,
-                        extensionInstallationID: browser.extensionInstallationID
+                        target: browser
                     )
                 }
             }
@@ -577,6 +633,18 @@ final class AwaitCueApplicationModel: ObservableObject {
         try applicationSupportDirectory().appendingPathComponent("native-bridge.json")
     }
 
+    /// App Group 由签名与 provisioning 决定；缺失时必须把真实原因展示给用户，不能伪装成扩展未连接。
+    nonisolated static func safariBridgeStartupStatus(containerURL: URL?) -> String {
+        containerURL == nil
+            ? "App Group 不可用；请安装带有效 Apple 签名与配置文件的 AwaitCue。"
+            : "等待扩展连接"
+    }
+
+    /// Development/Developer ID provisioning 提供 App Group 时，把同一短期 token 暴露给 Safari native extension。
+    private static func safariNativeBridgeDescriptorURL(containerURL: URL?) -> URL? {
+        containerURL?.appendingPathComponent(AwaitCueSafariBridgeConfiguration.descriptorFilename)
+    }
+
     /// 保存用户可编辑的排除清单，并让已经运行的 provider 在下一次截图前立即读取新规则。
     private func persistPrivacyExclusionConfiguration() {
         UserDefaults.standard.set(
@@ -699,11 +767,19 @@ final class AwaitCueApplicationModel: ObservableObject {
             else {
                 continue
             }
-            try await browserSelectionRelay.bind(
-                hookID: hook.id,
-                target: target,
-                requirePixels: target.observationMode.evidenceRequirement != .dom
-            )
+            do {
+                try await browserSelectionRelay.bind(
+                    hookID: hook.id,
+                    target: target
+                )
+                _ = try? await coordinator.apply(.unblocked(at: .now), to: hook.id)
+            } catch {
+                // 一个浏览器或 Profile 不可用不能阻断其他 Hook 的恢复。
+                _ = try? await coordinator.apply(
+                    .blocked(.browserExtensionDisconnected, at: .now),
+                    to: hook.id
+                )
+            }
         }
     }
 
@@ -801,12 +877,18 @@ final class AwaitCueApplicationModel: ObservableObject {
         }
     }
 
-    /// 把冻结框选压缩为只驻留内存的 JPEG，并附上稳定 Target 上下文供首次模型判断。
-    private static func previewEvidence(
+    /// 普通 App 使用冻结框选图片；Browser Target 只返回页面内容，绝不把冻结截图发送给模型。
+    static func previewEvidence(
         for target: HookTarget,
         image: CGImage,
         browserDOMText: String?
     ) throws -> ModelEvidence {
+        if case let .browser(browser) = target {
+            return ModelEvidence(
+                text: "\(browser.initialTitle)\n\(browser.host)",
+                domText: browserDOMText
+            )
+        }
         let resizedImage = try resizedPreviewImage(image, maximumDimension: 1_024)
         let bitmap = NSBitmapImageRep(cgImage: resizedImage)
         guard let jpeg = bitmap.representation(
@@ -815,15 +897,11 @@ final class AwaitCueApplicationModel: ObservableObject {
         ) else {
             throw OpenAIResponsesClientError.invalidRequest
         }
-        let contextText = switch target {
-        case let .window(window):
-            window.initialTitle
-        case let .browser(browser):
-            "\(browser.initialTitle)\n\(browser.host)"
+        guard case let .window(window) = target else {
+            throw OpenAIResponsesClientError.invalidRequest
         }
         return ModelEvidence(
-            text: contextText,
-            domText: browserDOMText,
+            text: window.initialTitle,
             image: ModelImage(data: jpeg, mediaType: "image/jpeg")
         )
     }

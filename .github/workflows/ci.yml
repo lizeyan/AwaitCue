@@ -18,11 +18,18 @@ jobs:
   swift:
     name: Swift build, tests, and coverage
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: BrowserExtension/package-lock.json
+      - name: Install WebExtension build dependencies
+        run: npm --prefix BrowserExtension ci
       - name: Build with warnings as errors
         run: swift build -Xswiftc -warnings-as-errors
       - name: Run macOS AppKit end-to-end behavior tests
@@ -31,6 +38,11 @@ jobs:
         run: ./Scripts/swift-coverage.sh
       - name: Build application bundle
         run: ./Scripts/build-app.sh
+      - name: Verify embedded Safari Web Extension
+        run: |
+          test -x dist/AwaitCue.app/Contents/PlugIns/AwaitCueSafariExtension.appex/Contents/MacOS/AwaitCueSafariExtension
+          plutil -lint dist/AwaitCue.app/Contents/PlugIns/AwaitCueSafariExtension.appex/Contents/Info.plist
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' dist/AwaitCue.app/Contents/PlugIns/AwaitCueSafariExtension.appex/Contents/Info.plist)" = com.apple.Safari.web-extension
       - name: Upload Swift coverage
         uses: actions/upload-artifact@v7
         with:
@@ -48,28 +60,44 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: BrowserExtension/package-lock.json
+          cache-dependency-path: |
+            BrowserExtension/package-lock.json
+            SafariExtension/package-lock.json
       - name: Install dependencies
-        run: npm --prefix BrowserExtension ci
+        run: |
+          npm --prefix BrowserExtension ci
+          npm --prefix SafariExtension ci
       - name: Lint
         run: npm --prefix BrowserExtension run lint
       - name: Typecheck
         run: npm --prefix BrowserExtension run typecheck
       - name: Test with coverage gate
         run: npm --prefix BrowserExtension run coverage
+      - name: Test Safari transport adapter with coverage gate
+        run: npm --prefix SafariExtension run coverage
       - name: Build extension
         run: npm --prefix BrowserExtension run build
+      - name: Build Safari WebExtension resources
+        run: npm --prefix BrowserExtension run build:safari
       - name: Upload extension coverage
         uses: actions/upload-artifact@v7
         with:
           name: extension-coverage
-          path: BrowserExtension/coverage
+          path: |
+            BrowserExtension/coverage
+            SafariExtension/coverage
           if-no-files-found: error
       - name: Upload unpacked extension
         uses: actions/upload-artifact@v7
         with:
           name: chromium-extension
           path: BrowserExtension/dist
+          if-no-files-found: error
+      - name: Upload Safari WebExtension resources
+        uses: actions/upload-artifact@v7
+        with:
+          name: safari-web-extension-resources
+          path: SafariExtension/dist
           if-no-files-found: error
 
   benchmark:

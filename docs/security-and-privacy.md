@@ -4,13 +4,14 @@ AwaitCue handles screen content that may include source code, documents, message
 
 ## Local guarantees
 
-- Screenshots, frozen selection frames, DOM text, and `tabCapture` frames remain in memory only.
+- Ordinary-App screenshots, Appropriate to Interrupt screenshots, frozen selection frames, and browser DOM text remain in memory only.
+- Safari and Chromium Browser Targets read page text, ARIA, semantic state classes, form/progress attributes, and relative coordinates. They never capture or send browser screenshots.
 - The application does not collect clipboard contents or actual key values.
 - API keys are stored in macOS Keychain.
 - Structured logs contain identifiers, decision enums, confidence, and sanitized error categories only.
 - Telemetry and crash reporting are disabled in the initial release.
-- User-configured bundle IDs and active Chromium hosts are checked locally before current-activity capture. Chromium context is checked again after capture, and the in-memory image is discarded unless the same browser installation, window, tab, and host remain active. A match or ambiguous result is classified as not appropriate to interrupt without uploading that screenshot.
-- Exiting the menu bar app stops observation and browser capture.
+- User-configured bundle IDs and active Safari/Chromium hosts are checked locally before the Appropriate to Interrupt screenshot. Browser context is checked again after capture, and the in-memory image is discarded unless the same browser installation, window, tab, and host remain active. An excluded or ambiguous result is classified as not appropriate to interrupt without uploading that screenshot.
+- Exiting the menu bar app stops browser DOM observation and ordinary-App capture.
 
 ## Model endpoint boundary
 
@@ -26,9 +27,11 @@ Text and images from observed apps are data, never instructions. Model instructi
 
 ## Browser permissions
 
-DOM observation is preferred. Pixel-only browser Targets require an explicit user action to start `tabCapture`. The extension must request video only, use the lowest practical frame rate and resolution, and close the stream when the Hook completes, becomes unavailable, is cancelled, or the native app disconnects.
+All Browser Targets are DOM-only. Extensions do not request tab video, browser screenshots, or pixel-capture permissions. If the selected region exposes no usable text, ARIA, semantic state class, form/progress attribute, or equivalent page meaning, the extension reports `no_semantic_content`; AwaitCue must treat this as insufficient evidence and return or retain `uncertain`, never infer state from absent pixels.
 
-The Chromium native host does not own Hook state. It authenticates to a loopback-only menu bar relay with a random token stored in a `0600` descriptor, then forwards already-framed JSON. Either forwarding direction ending terminates the dedicated host process, so closing the menu bar app disconnects the extension and stops its DOM observers and capture streams.
+The Chromium native host does not own Hook state. It authenticates to a loopback-only menu bar relay with a random token stored in a `0600` descriptor, then forwards already-framed JSON. Either forwarding direction ending terminates the dedicated host process, so closing the menu bar app disconnects the extension and stops its DOM observers.
+
+Safari uses the existing `AwaitCue.app` as its containing app. Its sandboxed native app extension reads the same short-lived descriptor through the configured App Group and forwards DOM-only events to the loopback relay. The App Group must never store URL, DOM, screenshots, model payloads, or Hook state. An unsigned/ad-hoc structural build does not prove App Group access: the final Developer ID identity, registered App Group/provisioning choice, notarized bundle, and clean-install communication path require a real signed validation.
 
 The native host also attaches the operating-system bundle identity of the browser process that launched it. The menu bar app rejects cross-browser responses and ambiguous multi-profile active-host results. Arc layouts whose sidebar or docked tools make the viewport origin unprovable are rejected rather than approximated.
 

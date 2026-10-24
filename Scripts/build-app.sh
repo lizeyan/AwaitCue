@@ -9,9 +9,15 @@ readonly bin_path="$(swift build -c "${configuration}" --show-bin-path)"
 readonly app_path="dist/AwaitCue.app"
 
 swift build -c "${configuration}"
+CONFIGURATION="${configuration}" \
+VERSION="${version}" \
+BUILD_NUMBER="${build_number}" \
+./Scripts/build-safari-extension.sh
 
 rm -rf "${app_path}"
-mkdir -p "${app_path}/Contents/MacOS" "${app_path}/Contents/Resources"
+mkdir -p \
+  "${app_path}/Contents/MacOS" \
+  "${app_path}/Contents/Resources"
 cp "${bin_path}/AwaitCue" "${app_path}/Contents/MacOS/AwaitCue"
 cp "${bin_path}/AwaitCueNativeHost" "${app_path}/Contents/MacOS/AwaitCueNativeHost"
 cp Config/Info.plist "${app_path}/Contents/Info.plist"
@@ -22,5 +28,9 @@ fi
 
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${version}" "${app_path}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${build_number}" "${app_path}/Contents/Info.plist"
+
+# 最后嵌入 .appex，避免 LaunchServices 在主 App plist 尚未完成时扫描半成品 bundle。
+mkdir -p "${app_path}/Contents/PlugIns"
+cp -R -X "dist/AwaitCueSafariExtension.appex" "${app_path}/Contents/PlugIns/"
 
 echo "Built ${app_path}"

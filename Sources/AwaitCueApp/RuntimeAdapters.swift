@@ -64,13 +64,7 @@ struct AppConditionEvidenceProvider: HookRuntimeConditionEvidenceProvider {
                 throw HookRuntimeEvidenceError.evidenceIncomplete
             }
             let hasDOM = !(evidence.domText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-            let hasImage = evidence.image != nil
-            let isComplete = switch browser.observationMode.evidenceRequirement {
-            case .dom: hasDOM
-            case .image: hasImage
-            case .domAndImage: hasDOM && hasImage
-            }
-            guard isComplete else {
+            guard browser.observationMode == .dom, hasDOM else {
                 throw HookRuntimeEvidenceError.evidenceIncomplete
             }
             return evidence
@@ -222,7 +216,7 @@ struct AppRuntimeEffectExecutor: HookRuntimeEffectExecutor {
             if case let .browser(browser) = hook.target {
                 try? await browserRelay.unbind(
                     hookID: hook.id,
-                    extensionInstallationID: browser.extensionInstallationID
+                    target: browser
                 )
             }
         } catch {

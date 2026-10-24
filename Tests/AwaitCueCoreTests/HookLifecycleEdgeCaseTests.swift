@@ -299,7 +299,7 @@ struct HookLifecycleEdgeCaseTests {
                 initialURL: URL(string: "https://example.com/build")!,
                 initialTitle: "Build",
                 normalizedRegion: NormalizedRegion(x: 0.2, y: 0.3, width: 0.4, height: 0.5),
-                observationMode: .domAndImage
+                observationMode: .dom
             )
         )
 

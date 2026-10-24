@@ -15,6 +15,7 @@ let package = Package(
         .library(name: "AwaitCueModel", targets: ["AwaitCueModel"]),
         .library(name: "AwaitCuePersistence", targets: ["AwaitCuePersistence"]),
         .library(name: "AwaitCueBrowserBridge", targets: ["AwaitCueBrowserBridge"]),
+        .library(name: "AwaitCueSafariBridge", targets: ["AwaitCueSafariBridge"]),
         .library(name: "AwaitCueRuntime", targets: ["AwaitCueRuntime"]),
         .executable(name: "AwaitCueNativeHost", targets: ["AwaitCueNativeHost"]),
     ],
@@ -54,6 +55,17 @@ let package = Package(
             name: "AwaitCueNativeHost",
             dependencies: ["AwaitCueBrowserBridge"]
         ),
+        .target(
+            name: "AwaitCueSafariBridge",
+            dependencies: ["AwaitCueSafariServicesShim"],
+            linkerSettings: [.linkedFramework("SafariServices")]
+        ),
+        .target(
+            name: "AwaitCueSafariServicesShim",
+            path: "Sources/AwaitCueSafariServicesShim",
+            publicHeadersPath: "include",
+            linkerSettings: [.linkedFramework("SafariServices")]
+        ),
         .executableTarget(
             name: "AwaitCueApp",
             dependencies: [
@@ -63,6 +75,7 @@ let package = Package(
                 "AwaitCueModel",
                 "AwaitCuePersistence",
                 "AwaitCueBrowserBridge",
+                "AwaitCueSafariBridge",
                 "AwaitCueRuntime",
             ],
             resources: [.process("Resources")],
@@ -78,10 +91,17 @@ let package = Package(
         .testTarget(name: "AwaitCueModelTests", dependencies: ["AwaitCueModel", "AwaitCueCore"]),
         .testTarget(name: "AwaitCuePersistenceTests", dependencies: ["AwaitCuePersistence", "AwaitCueCore"]),
         .testTarget(name: "AwaitCueBrowserBridgeTests", dependencies: ["AwaitCueBrowserBridge", "AwaitCueCore"]),
+        .testTarget(name: "AwaitCueSafariBridgeTests", dependencies: ["AwaitCueSafariBridge"]),
         .testTarget(name: "AwaitCueRuntimeTests", dependencies: ["AwaitCueRuntime", "AwaitCueCore", "AwaitCueModel"]),
         .testTarget(
             name: "AwaitCueAppE2ETests",
-            dependencies: ["AwaitCueApp", "AwaitCueCore", "AwaitCueSelection"]
+            dependencies: [
+                "AwaitCueApp",
+                "AwaitCueBrowserBridge",
+                "AwaitCueCapture",
+                "AwaitCueCore",
+                "AwaitCueSelection",
+            ]
         ),
     ]
 )

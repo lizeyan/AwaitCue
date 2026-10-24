@@ -91,11 +91,18 @@ struct HookFactoryTests {
         }
     }
 
-    @Test("浏览器观察模式映射为模型实际需要的证据组合")
-    func browserObservationModeDefinesEvidenceRequirement() {
+    @Test("浏览器只使用 DOM 证据并把旧像素模式迁移为 DOM")
+    func browserObservationModeIsDOMOnly() throws {
         #expect(BrowserTarget.ObservationMode.dom.evidenceRequirement == .dom)
-        #expect(BrowserTarget.ObservationMode.image.evidenceRequirement == .image)
-        #expect(BrowserTarget.ObservationMode.domAndImage.evidenceRequirement == .domAndImage)
+        for legacyValue in ["dom", "image", "domAndImage"] {
+            let decoded = try JSONDecoder().decode(
+                BrowserTarget.ObservationMode.self,
+                from: Data("\"\(legacyValue)\"".utf8)
+            )
+            #expect(decoded == .dom)
+        }
+        let encoded = try JSONEncoder().encode(BrowserTarget.ObservationMode.dom)
+        #expect(String(decoding: encoded, as: UTF8.self) == "\"dom\"")
     }
 
     @Test("浏览器扩展安装入口覆盖受支持浏览器并使用稳定身份")
@@ -107,8 +114,13 @@ struct HookFactoryTests {
             "Chromium",
         ])
         #expect(BrowserExtensionFamily.chrome.bundleIdentifier == "com.google.Chrome")
+        #expect(BrowserExtensionFamily.edge.bundleIdentifier == "com.microsoft.edgemac")
+        #expect(BrowserExtensionFamily.arc.bundleIdentifier == "company.thebrowser.Browser")
+        #expect(BrowserExtensionFamily.chromium.bundleIdentifier == "org.chromium.Chromium")
+        #expect(BrowserExtensionFamily.chrome.managementURL.absoluteString == "chrome://extensions/")
         #expect(BrowserExtensionFamily.edge.managementURL.absoluteString == "edge://extensions/")
         #expect(BrowserExtensionFamily.arc.managementURL.absoluteString == "chrome://extensions/")
+        #expect(BrowserExtensionFamily.chromium.managementURL.absoluteString == "chrome://extensions/")
         #expect(
             BrowserExtensionDistribution.releaseDownloadURL.absoluteString
                 == "https://github.com/lizeyan/AwaitCue/releases/latest"

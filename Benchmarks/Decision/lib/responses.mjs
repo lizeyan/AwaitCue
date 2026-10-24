@@ -11,6 +11,7 @@ export function buildDecisionRequest(entry, evidence, configuration) {
     ? configuration.conditionInstructions
     : configuration.interruptibilityInstructions;
   if (!instructions) throw new Error(`missing ${entry.kind} instructions`);
+  validateEvidenceSurface(entry, evidence);
   const content = [{
     type: "input_text",
     text: inputText(entry, evidence.text),
@@ -45,6 +46,29 @@ export function buildDecisionRequest(entry, evidence, configuration) {
       },
     },
   };
+}
+
+function validateEvidenceSurface(entry, evidence) {
+  const tags = Array.isArray(entry.tags) ? entry.tags : [];
+  const hasText = typeof evidence.text === "string" && evidence.text.trim().length > 0;
+  if (entry.kind === "interruptibility") {
+    if (!tags.includes("active-window") || tags.includes("browser") || tags.includes("app")
+        || !evidence.image) {
+      throw new Error("interruptibility evidence must be an active-window image");
+    }
+    return;
+  }
+  const isBrowser = tags.includes("browser");
+  const isApp = tags.includes("app");
+  if (isBrowser === isApp) {
+    throw new Error("entry must declare exactly one evidence surface: browser or app");
+  }
+  if (isBrowser && (evidence.image || !hasText)) {
+    throw new Error("browser evidence must be DOM-only");
+  }
+  if (isApp && (!evidence.image || hasText)) {
+    throw new Error("app evidence must be image-only");
+  }
 }
 
 /** 把 Responses envelope 收敛为 benchmark 的稳定结果分类。 */
