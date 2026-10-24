@@ -1,5 +1,6 @@
 import { tabIdentityMatches, uniqueFocusedActiveHost, uniqueMatchingWindow } from "./browserSelection";
 import {
+  chromiumProtocolVersion,
   nativeHostName,
   isNormalizedRegion,
   parseNativeCommand,
@@ -25,7 +26,10 @@ let recentlyFocusedTab: Readonly<{
 }> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelayMilliseconds = 1_000;
+let disconnectCleanup: Promise<void> | null = null;
+let connectRequestedDuringCleanup = false;
 const installationIdentityPromise = installationIdentity();
+const extensionVersion = chrome.runtime.getManifest().version;
 
 chrome.runtime.onInstalled.addListener(() => connectNative());
 chrome.runtime.onStartup.addListener(() => connectNative());
@@ -54,9 +58,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender) => {
   if (message.type === "awaitcue.evidence") {
     const evidence = normalizeEvidence(message.evidence);
     if (!evidence) return;
-    void installationIdentityPromise.then((extensionInstallationID) => {
-      postEvent({ type: "evidenceChanged", extensionInstallationID, evidence });
-    });
+    postDOMEvidence(evidence);
   }
 });
 
@@ -85,9 +87,9 @@ chrome.tabs.onUpdated.addListener((tabID, changeInfo, tab) => {
       if (!tab.url || !tabIdentityMatches(tab.url, binding.expectedURL, binding.expectedHost)) {
         void markTargetUnavailable(hookID, "tab_navigated");
       } else {
-        void installContentBinding(hookID, binding).catch(() =>
-          markTargetUnavailable(hookID, "content_rebind_failed")
-        );
+        void installContentBinding(hookID, binding)
+          .then((evidence) => postDOMEvidence(evidence))
+          .catch(() => markTargetUnavailable(hookID, "content_rebind_failed"));
       }
     }
   }
@@ -99,24 +101,49 @@ connectNative();
 
 function connectNative(): void {
   if (nativePort) return;
+  if (disconnectCleanup !== null) {
+    // onStartup/onInstalled/action 可能在旧 observer 清理期间到达；只登记一次后续连接意图。
+    connectRequestedDuringCleanup = true;
+    return;
+  }
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
   const port = chrome.runtime.connectNative(nativeHostName);
   nativePort = port;
+  let receivedNativeMessage = false;
   port.onMessage.addListener((message: unknown) => {
     // 断线重连后旧 port 仍可能排队投递消息，不能让它借新 port 回包并污染新连接状态。
     if (nativePort !== port) return;
+    if (!receivedNativeMessage) {
+      // `connectNative` 成功返回并不代表 native host 可用；只有收到首条回包才结束本轮退避。
+      receivedNativeMessage = true;
+      reconnectDelayMilliseconds = 1_000;
+    }
     void handleNativeCommand(message);
   });
   port.onDisconnect.addListener(() => {
-    if (nativePort !== port) return;
-    nativePort = null;
-    void clearAllBindings();
-    scheduleReconnect();
+    void handleNativeDisconnect(port);
   });
   void postReady();
+}
+
+/** 旧页面 observer 全部停止后才能建立新 port，避免迟到 unbind 与恢复绑定交错。 */
+async function handleNativeDisconnect(port: chrome.runtime.Port): Promise<void> {
+  if (nativePort !== port) return;
+  nativePort = null;
+  const cleanup = clearAllBindings();
+  disconnectCleanup = cleanup;
+  await cleanup;
+  if (disconnectCleanup !== cleanup) return;
+  disconnectCleanup = null;
+  if (connectRequestedDuringCleanup) {
+    connectRequestedDuringCleanup = false;
+    connectNative();
+  } else if (nativePort === null) {
+    scheduleReconnect();
+  }
 }
 
 async function handleNativeCommand(value: unknown): Promise<void> {
@@ -127,7 +154,7 @@ async function handleNativeCommand(value: unknown): Promise<void> {
   }
   try {
     if (
-      (command.type === "bindTarget" || command.type === "unbindTarget" || command.type === "focusTarget") &&
+      (command.type === "bindTarget" || command.type === "unbindTarget" || command.type === "focusTarget" || command.type === "validateTarget") &&
       command.extensionInstallationID !== (await installationIdentityPromise)
     ) {
       return;
@@ -138,6 +165,8 @@ async function handleNativeCommand(value: unknown): Promise<void> {
       postEvent({
         type: "pong",
         requestID: command.requestID,
+        protocolVersion: chromiumProtocolVersion,
+        extensionVersion,
         extensionInstallationID: command.extensionInstallationID
       });
     } else if (command.type === "resolveActiveHost") {
@@ -145,9 +174,11 @@ async function handleNativeCommand(value: unknown): Promise<void> {
     } else if (command.type === "resolveSelection") {
       await resolveSelection(command);
     } else if (command.type === "unbindTarget") {
-      await unbind(command.hookID);
+      await unbind(command);
     } else if (command.type === "focusTarget") {
       await focusTarget(command);
+    } else if (command.type === "validateTarget") {
+      await validateTarget(command);
     } else {
       await bind(command);
     }
@@ -158,6 +189,14 @@ async function handleNativeCommand(value: unknown): Promise<void> {
     }
     if (command.type === "bindTarget") {
       await markTargetUnavailable(command.hookID, "content_bind_failed", command.requestID);
+      return;
+    }
+    if (command.type === "focusTarget") {
+      await markTargetUnavailable(command.hookID, "focus_failed", command.requestID);
+      return;
+    }
+    if (command.type === "validateTarget") {
+      await markTargetUnavailable(command.hookID, "validation_failed", command.requestID);
       return;
     }
     const event: ExtensionEvent = {
@@ -305,10 +344,11 @@ function postSelectionFailure(requestID: string, reason: SelectionFailureReason)
 }
 
 async function postReady(): Promise<void> {
-  reconnectDelayMilliseconds = 1_000;
   nativePort?.postMessage({
     type: "ready",
     browser: navigator.userAgent,
+    protocolVersion: chromiumProtocolVersion,
+    extensionVersion,
     extensionInstallationID: await installationIdentityPromise
   } satisfies ExtensionEvent);
 }
@@ -350,7 +390,7 @@ async function bind(command: Extract<NativeCommand, { type: "bindTarget" }>): Pr
     expectedURL: command.expectedURL,
     region: command.region
   };
-  await installContentBinding(command.hookID, binding);
+  const initialEvidence = await installContentBinding(command.hookID, binding);
   hookBindings.set(command.hookID, binding);
 
   postEvent({
@@ -360,30 +400,79 @@ async function bind(command: Extract<NativeCommand, { type: "bindTarget" }>): Pr
     hookID: command.hookID,
     tabID: command.tabID
   });
+  if (initialEvidence) {
+    postDOMEvidence(initialEvidence);
+  }
 }
 
 async function focusTarget(command: Extract<NativeCommand, { type: "focusTarget" }>): Promise<void> {
-  const tab = await chrome.tabs.get(command.tabID);
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(command.tabID);
+  } catch {
+    await markTargetUnavailable(command.hookID, "tab_closed", command.requestID);
+    return;
+  }
   if (!tab.url || !tabIdentityMatches(tab.url, command.expectedURL, command.expectedHost)) {
-    await markTargetUnavailable(command.hookID, "tab_identity_mismatch");
+    await markTargetUnavailable(command.hookID, "tab_identity_mismatch", command.requestID);
     return;
   }
   await chrome.tabs.update(command.tabID, { active: true });
   if (typeof tab.windowId === "number") {
     await chrome.windows.update(tab.windowId, { focused: true });
   }
+  postEvent({
+    type: "targetFocused",
+    requestID: command.requestID,
+    extensionInstallationID: await installationIdentityPromise,
+    hookID: command.hookID,
+    tabID: command.tabID
+  });
 }
 
-async function unbind(hookID: string): Promise<void> {
-  const binding = hookBindings.get(hookID);
+/** 只验证持久化 tab 身份，不激活窗口，也不安装页面 observer。 */
+async function validateTarget(
+  command: Extract<NativeCommand, { type: "validateTarget" }>
+): Promise<void> {
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(command.tabID);
+  } catch {
+    await markTargetUnavailable(command.hookID, "tab_closed", command.requestID);
+    return;
+  }
+  if (!tab.url || !tabIdentityMatches(tab.url, command.expectedURL, command.expectedHost)) {
+    await markTargetUnavailable(command.hookID, "tab_identity_mismatch", command.requestID);
+    return;
+  }
+  postEvent({
+    type: "targetValidated",
+    requestID: command.requestID,
+    extensionInstallationID: await installationIdentityPromise,
+    hookID: command.hookID,
+    tabID: command.tabID
+  });
+}
+
+async function unbind(command: Extract<NativeCommand, { type: "unbindTarget" }>): Promise<void> {
+  const binding = hookBindings.get(command.hookID);
   if (binding) {
     try {
-      await chrome.tabs.sendMessage(binding.tabID, { type: "awaitcue.unbind", hookID });
+      await chrome.tabs.sendMessage(binding.tabID, {
+        type: "awaitcue.unbind",
+        hookID: command.hookID
+      });
     } catch {
       // 标签页可能在解绑前已经关闭；清理本地状态仍然必须完成。
     }
   }
-  hookBindings.delete(hookID);
+  hookBindings.delete(command.hookID);
+  postEvent({
+    type: "targetUnbound",
+    requestID: command.requestID,
+    extensionInstallationID: await installationIdentityPromise,
+    hookID: command.hookID
+  });
 }
 
 /** Native app 离线时停止 DOM observer；重连后由 app 从持久化 Hook 重新绑定。 */
@@ -397,13 +486,14 @@ async function clearAllBindings(): Promise<void> {
   );
 }
 
-async function installContentBinding(hookID: string, binding: HookBinding): Promise<void> {
+async function installContentBinding(hookID: string, binding: HookBinding): Promise<Evidence | null> {
   await chrome.scripting.executeScript({ target: { tabId: binding.tabID }, files: ["content.js"] });
-  await chrome.tabs.sendMessage(binding.tabID, {
+  const response: unknown = await chrome.tabs.sendMessage(binding.tabID, {
     type: "awaitcue.bind",
     hookID,
     region: binding.region
   });
+  return isRecord(response) ? normalizeEvidence(response.evidence) : null;
 }
 
 async function markTargetUnavailable(
@@ -423,6 +513,13 @@ async function markTargetUnavailable(
 
 function postEvent(event: ExtensionEvent): void {
   nativePort?.postMessage(event);
+}
+
+function postDOMEvidence(evidence: Evidence | null): void {
+  if (!evidence) return;
+  void installationIdentityPromise.then((extensionInstallationID) => {
+    postEvent({ type: "evidenceChanged", extensionInstallationID, evidence });
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
