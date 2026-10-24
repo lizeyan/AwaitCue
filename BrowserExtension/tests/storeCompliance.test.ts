@@ -13,10 +13,8 @@ describe("Chrome Web Store package", () => {
     expect(manifest.manifest_version).toBe(3);
     expect(manifest.permissions).toEqual([
       "nativeMessaging",
-      "offscreen",
       "scripting",
-      "storage",
-      "tabCapture"
+      "storage"
     ]);
     expect(manifest.host_permissions).toEqual(["http://*/*", "https://*/*"]);
     expect(manifest.icons).toEqual({
@@ -41,9 +39,7 @@ describe("Chrome Web Store package", () => {
       "icons/icon-16.png",
       "icons/icon-32.png",
       "icons/icon-48.png",
-      "manifest.json",
-      "offscreen.html",
-      "offscreen.js"
+      "manifest.json"
     ]);
     const executableText = files
       .filter((file) => file.endsWith(".js") || file.endsWith(".html"))

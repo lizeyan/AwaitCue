@@ -54,16 +54,28 @@ public struct WindowTarget: Codable, Equatable, Sendable {
 public struct BrowserTarget: Codable, Equatable, Sendable {
     public enum ObservationMode: String, Codable, Sendable {
         case dom
-        case image
-        case domAndImage
 
-        /// 将 Target 的观察能力转换为每次模型判断必须具备的证据组合。
-        public var evidenceRequirement: EvidenceRequirement {
-            switch self {
-            case .dom: .dom
-            case .image: .image
-            case .domAndImage: .domAndImage
+        /// Browser Target 只读取页面内容；旧像素模式在解码时迁移为 DOM，避免历史 Hook 永久失效。
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            switch try container.decode(String.self) {
+            case "dom", "image", "domAndImage":
+                self = .dom
+            case let value:
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Unsupported browser observation mode: \(value)"
+                )
             }
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(Self.dom.rawValue)
+        }
+
+        public var evidenceRequirement: EvidenceRequirement {
+            .dom
         }
     }
 
@@ -106,7 +118,7 @@ public enum HookTarget: Codable, Equatable, Sendable {
     case browser(BrowserTarget)
 }
 
-/// 条件判断需要观察的证据种类。
+/// 条件判断需要观察的证据种类；图片类型仅用于普通 macOS App Target 和历史数据兼容。
 public enum EvidenceRequirement: String, Codable, Sendable {
     case dom
     case image

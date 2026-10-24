@@ -20,7 +20,7 @@ struct AwaitCueSettingsView: View {
         var subtitle: String {
             switch self {
             case .model: "连接 OpenAI Responses API 兼容的图片模型。"
-            case .browser: "安装并检查 Chrome、Edge、Arc 或 Chromium 扩展。"
+            case .browser: "管理 Safari、Chrome、Edge、Arc 或 Chromium 扩展。"
             case .privacy: "管理本地截图权限、浏览器连接和排除规则。"
             }
         }
@@ -76,12 +76,26 @@ struct AwaitCueSettingsView: View {
     private var browserSettings: some View {
         Form {
             Section("连接状态") {
-                LabeledContent("Native relay") {
-                    Text(model.browserBridgeStatus)
+                LabeledContent("Chrome / Edge / Arc") {
+                    Text(model.chromiumBridgeStatus)
+                }
+                LabeledContent("Safari relay") {
+                    Text(model.safariBridgeStatus)
                 }
             }
 
             Section {
+                LabeledContent("Safari") {
+                    HStack {
+                        Text(model.safariExtensionStatus)
+                            .foregroundStyle(
+                                model.safariExtensionStatus == "已启用" ? .green : .secondary
+                            )
+                        Button("打开扩展设置") {
+                            model.openSafariExtensionPreferences()
+                        }
+                    }
+                }
                 Button("下载最新扩展包…") {
                     model.openBrowserExtensionDownload()
                 }
@@ -100,7 +114,7 @@ struct AwaitCueSettingsView: View {
             } header: {
                 Text("安装与管理")
             } footer: {
-                Text("Chrome Web Store 版本发布前，请从 GitHub Release 下载扩展包，并在目标浏览器的扩展管理页启用开发者模式后加载。Chrome、Edge、Arc 和 Chromium 使用同一扩展构建。")
+                Text("Safari 扩展已经嵌入 AwaitCue.app，但仍需用户在 Safari 设置中启用并授权网站访问。Chrome、Edge、Arc 和 Chromium 使用同一 DOM-only 扩展构建。")
             }
 
             if let error = model.setupActionError {
@@ -167,8 +181,8 @@ struct AwaitCueSettingsView: View {
 
     private var privacySettings: some View {
         Form {
-            LabeledContent("截图与 DOM") {
-                Text("仅内存处理，不落盘")
+            LabeledContent("证据处理") {
+                Text("浏览器只读页面内容；普通 App 截图仅内存处理")
             }
             LabeledContent("屏幕录制权限") {
                 HStack {
@@ -197,7 +211,7 @@ struct AwaitCueSettingsView: View {
                 Text("停止全部观察与浏览器捕获")
             }
             LabeledContent("浏览器 relay") {
-                Text(model.browserBridgeStatus)
+                Text("Chromium：\(model.chromiumBridgeStatus)；Safari：\(model.safariBridgeStatus)")
             }
             Picker(
                 "全局框选快捷键",
@@ -224,13 +238,13 @@ struct AwaitCueSettingsView: View {
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(2 ... 5)
                 TextField(
-                    "Chromium host，每行一个",
+                    "浏览器 host，每行一个",
                     text: $model.excludedBrowserHostsText,
                     axis: .vertical
                 )
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(2 ... 5)
-                Text("命中规则时会在本地判定为不适合打断，不生成当前活动截图，也不请求模型。Chromium host 规则同时覆盖其子域；无法可信解析当前 host 时同样不会截图。")
+                Text("命中规则时会在本地判定为不适合打断，不生成当前活动截图，也不请求模型。浏览器 host 规则同时覆盖 Safari 与 Chromium 系浏览器及其子域；无法可信解析当前 host 时同样不会截图。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

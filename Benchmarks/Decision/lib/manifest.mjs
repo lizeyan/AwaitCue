@@ -28,21 +28,23 @@ export function validateBenchmarkManifest(value, baseDirectory) {
       throw new Error(`invalid expected decision for ${kind}: ${entry.expected}`);
     }
     if (kind === "condition") nonEmptyString(entry.condition, `${id} condition`);
+    const tags = Array.isArray(entry.tags) ? entry.tags.map(String) : [];
+    const surface = evidenceSurface(kind, tags, id);
     return {
       id,
       kind,
       expected: entry.expected,
       ...(kind === "condition" ? { condition: entry.condition.trim() } : {}),
       repetitions: positiveInteger(entry.repetitions ?? repetitions, `${id} repetitions`),
-      evidence: normalizeEvidence(entry.evidence, baseDirectory, id),
+      evidence: normalizeEvidence(entry.evidence, baseDirectory, id, surface),
       ...(typeof entry.description === "string" ? { description: entry.description } : {}),
-      ...(Array.isArray(entry.tags) ? { tags: entry.tags.map(String) } : {}),
+      tags,
     };
   });
   return { version: 1, repetitions, cases };
 }
 
-function normalizeEvidence(value, baseDirectory, id) {
+function normalizeEvidence(value, baseDirectory, id, surface) {
   assertRecord(value, `${id} evidence must be an object`);
   const text = typeof value.text === "string" && value.text.trim() ? value.text : undefined;
   const textFile = localPath(value.textFile, baseDirectory);
@@ -50,11 +52,34 @@ function normalizeEvidence(value, baseDirectory, id) {
   if (!text && !textFile && !image) {
     throw new Error(`${id} evidence must contain text, textFile, or image`);
   }
+  if (surface === "browser" && (image || (!text && !textFile))) {
+    throw new Error(`${id} browser evidence must be DOM-only`);
+  }
+  if (surface === "app" && (!image || text || textFile)) {
+    throw new Error(`${id} app evidence must be image-only`);
+  }
+  if (surface === "active-window" && (!image || textFile)) {
+    throw new Error(`${id} interruptibility evidence must be an active-window image`);
+  }
   return {
     ...(text ? { text } : {}),
     ...(textFile ? { textFile } : {}),
     ...(image ? { image } : {}),
   };
+}
+
+function evidenceSurface(kind, tags, id) {
+  if (kind === "interruptibility") {
+    if (!tags.includes("active-window") || tags.includes("browser") || tags.includes("app")) {
+      throw new Error(`${id} interruptibility evidence must use the active-window surface`);
+    }
+    return "active-window";
+  }
+  const surfaces = ["browser", "app"].filter((surface) => tags.includes(surface));
+  if (surfaces.length !== 1) {
+    throw new Error(`${id} must declare exactly one evidence surface: browser or app`);
+  }
+  return surfaces[0];
 }
 
 function localPath(value, baseDirectory) {

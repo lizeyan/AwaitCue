@@ -8,10 +8,10 @@ test("builds bounded structured requests for both decision contracts", () => {
     {
       kind: "condition",
       condition: "构建完成",
+      tags: ["browser", "dom-only"],
     },
     {
       text: "[10,20] Build succeeded",
-      image: { mediaType: "image/png", data: Buffer.from([1, 2, 3]) },
     },
     { model: "decision-model", conditionInstructions: "condition rules" },
   );
@@ -24,17 +24,40 @@ test("builds bounded structured requests for both decision contracts", () => {
     condition.text.format.schema.properties.decision.enum,
     ["matched", "notMatched", "uncertain"],
   );
-  assert.match(condition.input[0].content[1].image_url, /^data:image\/png;base64,/);
+  assert.equal(condition.input[0].content.length, 1);
 
   const interruptibility = buildDecisionRequest(
-    { kind: "interruptibility" },
-    { text: "User is reading an article" },
+    { kind: "interruptibility", tags: ["active-window", "screen-evidence"] },
+    {
+      text: "前台应用：Safari\n窗口标题：Article\n距最近输入约：18 秒",
+      image: { mediaType: "image/png", data: Buffer.from([1, 2, 3]) },
+    },
     { model: "decision-model", interruptibilityInstructions: "interrupt rules" },
   );
   assert.equal(interruptibility.instructions, "interrupt rules");
   assert.deepEqual(
     interruptibility.text.format.schema.properties.decision.enum,
     ["interruptible", "notInterruptible", "uncertain"],
+  );
+  assert.match(interruptibility.input[0].content[1].image_url, /^data:image\/png;base64,/);
+});
+
+test("rejects wrong Condition surfaces and DOM-only interruption evidence", () => {
+  assert.throws(
+    () => buildDecisionRequest(
+      { kind: "condition", condition: "done", tags: ["browser"] },
+      { text: "DOM", image: { mediaType: "image/png", data: Buffer.from([1]) } },
+      { model: "decision-model", conditionInstructions: "rules" },
+    ),
+    /browser evidence must be DOM-only/,
+  );
+  assert.throws(
+    () => buildDecisionRequest(
+      { kind: "interruptibility", tags: ["active-window"] },
+      { text: "Browser DOM" },
+      { model: "decision-model", interruptibilityInstructions: "rules" },
+    ),
+    /interruptibility evidence must be an active-window image/,
   );
 });
 

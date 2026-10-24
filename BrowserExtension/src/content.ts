@@ -24,6 +24,19 @@ const state = contentGlobal.__awaitCueContentState ?? {
 };
 contentGlobal.__awaitCueContentState = state;
 
+function publishFocusedTabIdentity(): void {
+  if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+  void chrome.runtime.sendMessage({
+    type: "awaitcue.focusedTab",
+    windowFrame: {
+      x: window.screenX,
+      y: window.screenY,
+      width: window.outerWidth,
+      height: window.outerHeight
+    }
+  });
+}
+
 if (!state.listenerInstalled) {
   state.listenerInstalled = true;
   chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
@@ -60,6 +73,10 @@ if (!state.listenerInstalled) {
     }
     return false;
   });
+  window.addEventListener("focus", publishFocusedTabIdentity, { passive: true });
+  window.addEventListener("resize", publishFocusedTabIdentity, { passive: true });
+  document.addEventListener("visibilitychange", publishFocusedTabIdentity, { passive: true });
+  publishFocusedTabIdentity();
 }
 
 function isBindMessage(value: unknown): value is BindMessage {

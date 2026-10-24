@@ -4,31 +4,49 @@ import SwiftUI
 /// 自主管理设置窗口，确保菜单栏 agent 每次请求都能激活并置前，而不是只创建隐藏的 Settings scene。
 @MainActor
 final class SettingsWindowController: NSObject, ObservableObject, NSWindowDelegate {
-    private let rootView: () -> AnyView
+    private let hostingController: NSHostingController<AnyView>
     private var windowController: NSWindowController?
 
     init(model: AwaitCueApplicationModel) {
-        rootView = { [weak model] in
-            guard let model else { return AnyView(EmptyView()) }
-            return AnyView(AwaitCueSettingsView(model: model))
-        }
+        hostingController = NSHostingController(
+            rootView: AnyView(
+                AwaitCueSettingsView(model: model)
+                    .frame(minWidth: 720, minHeight: 520)
+            )
+        )
+        super.init()
+        windowController = makeWindowController()
     }
 
     /// 注入真实 SwiftUI 内容但隔离进程级依赖，供窗口服务器端到端测试使用。
     init(rootView: @escaping () -> AnyView) {
-        self.rootView = rootView
+        // hosting tree 在 controller 初始化时预热；用户第一次点击设置不再承担 SwiftUI 冷启动成本。
+        hostingController = NSHostingController(
+            rootView: AnyView(
+                rootView()
+                    .frame(minWidth: 720, minHeight: 520)
+            )
+        )
+        super.init()
+        windowController = makeWindowController()
     }
 
     /// 同一时间只保留一个设置窗口；已存在时恢复最小化状态并带到前台。
     func present() {
-        if let window = windowController?.window {
-            activate(window)
+        if windowController == nil {
+            windowController = makeWindowController()
+        }
+        guard let controller = windowController,
+              let window = controller.window
+        else {
             return
         }
-        let hostingController = NSHostingController(
-            rootView: rootView()
-                .frame(minWidth: 720, minHeight: 520)
-        )
+        controller.showWindow(nil)
+        activate(window)
+    }
+
+    /// 隐藏预建真实窗口，把 AppKit/SwiftUI 首次布局成本移到菜单栏 App 启动阶段。
+    private func makeWindowController() -> NSWindowController {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -46,10 +64,7 @@ final class SettingsWindowController: NSObject, ObservableObject, NSWindowDelega
         window.delegate = self
         window.center()
 
-        let controller = NSWindowController(window: window)
-        windowController = controller
-        controller.showWindow(nil)
-        activate(window)
+        return NSWindowController(window: window)
     }
 
     func windowWillClose(_ notification: Notification) {

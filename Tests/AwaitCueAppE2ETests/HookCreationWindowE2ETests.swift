@@ -1,12 +1,57 @@
 import AppKit
 import AwaitCueCore
 import AwaitCueSelection
+import CoreGraphics
 import SwiftUI
 import Testing
 @testable import AwaitCueApp
 
 @Suite("macOS 创建 Hook 用户链路", .serialized)
 struct HookCreationWindowE2ETests {
+    @Test("live E2E 只在显式环境标记下隔离 Keychain 边界")
+    func keychainBoundaryRequiresExplicitE2EFlag() {
+        #expect(AwaitCueApplicationModel.shouldAccessKeychain(environment: [:]))
+        #expect(!AwaitCueApplicationModel.shouldAccessKeychain(
+            environment: ["AWAITCUE_E2E_SKIP_KEYCHAIN": "1"]
+        ))
+        #expect(AwaitCueApplicationModel.shouldAccessKeychain(
+            environment: ["AWAITCUE_E2E_SKIP_KEYCHAIN": "true"]
+        ))
+    }
+
+    @MainActor
+    @Test("浏览器创建预览只使用页面内容而普通 App 仍使用截图")
+    func previewEvidenceRespectsTargetEvidenceSource() throws {
+        let image = fixtureImage()
+        let browser = BrowserTarget(
+            browserBundleIdentifier: "com.google.Chrome",
+            nativeWindowIdentifier: 42,
+            extensionInstallationID: "installation-1",
+            tabIdentifier: 7,
+            host: "example.com",
+            initialURL: URL(string: "https://example.com")!,
+            initialTitle: "Example",
+            normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1),
+            observationMode: .dom
+        )
+
+        let browserEvidence = try AwaitCueApplicationModel.previewEvidence(
+            for: .browser(browser),
+            image: image,
+            browserDOMText: "[0,0] Build succeeded"
+        )
+        #expect(browserEvidence.image == nil)
+        #expect(browserEvidence.domText == "[0,0] Build succeeded")
+
+        let windowEvidence = try AwaitCueApplicationModel.previewEvidence(
+            for: fixtureTarget,
+            image: image,
+            browserDOMText: nil
+        )
+        #expect(windowEvidence.image != nil)
+        #expect(windowEvidence.domText == nil)
+    }
+
     @MainActor
     @Test("用户完成框选后看到屏内且尺寸可用的创建窗口")
     func selectionPresentsUsableCreationWindow() throws {
@@ -67,13 +112,13 @@ struct HookCreationWindowE2ETests {
         first.performClose(nil)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         #expect(userCloseCount == 1)
+        #expect(!NSApp.windows.contains { $0.title == "创建 Hook" && $0.isVisible })
 
         coordinator.selectionCompleted(fixtureTarget) { _ in }
         defer { coordinator.finish {} }
 
         let second = try creationWindow()
         #expect(second.isVisible)
-        #expect(second !== first)
     }
 
     @MainActor
@@ -140,4 +185,18 @@ struct HookCreationWindowE2ETests {
             )
         )
     }
+}
+
+private func fixtureImage() -> CGImage {
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let context = CGContext(
+        data: nil,
+        width: 2,
+        height: 2,
+        bitsPerComponent: 8,
+        bytesPerRow: 8,
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    )!
+    return context.makeImage()!
 }

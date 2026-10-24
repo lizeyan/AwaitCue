@@ -40,7 +40,30 @@ describe("DOM evidence", () => {
     expect(evidence.text).toContain("Succeeded");
     expect(evidence.text).not.toContain("Secret outside region");
     expect(evidence.aria).toContain("aria-label:Build status");
+    expect(evidence.availability).toBe("sufficient");
+    expect(evidence).not.toHaveProperty("imageDataURL");
     expect(evidence.fingerprint).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("marks a visual-only selected region as insufficient instead of inventing screenshot evidence", () => {
+    document.body.innerHTML = `<canvas id="pipeline"></canvas>`;
+    vi.spyOn(document.querySelector<HTMLElement>("#pipeline")!, "getBoundingClientRect")
+      .mockReturnValue(rect(100, 100, 300, 100));
+
+    const evidence = collectEvidence(document, "visual-only", {
+      x: 0.05,
+      y: 0.1,
+      width: 0.4,
+      height: 0.4
+    });
+
+    expect(evidence).toMatchObject({
+      availability: "insufficient",
+      insufficiencyReason: "no_semantic_content",
+      text: "",
+      aria: []
+    });
+    expect(evidence).not.toHaveProperty("imageDataURL");
   });
 
   it("uses text glyph bounds and keeps semantic status classes", () => {
@@ -115,6 +138,27 @@ describe("DOM evidence", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(onChange.mock.calls.length).toBeGreaterThanOrEqual(2);
 
+    observer.stop();
+  });
+
+  it("emits when a background page changes only its semantic status class", async () => {
+    const status = document.querySelector<HTMLElement>("#inside")!;
+    status.className = "pipeline-status-pending";
+    const onChange = vi.fn();
+    const observer = new EvidenceObserver(
+      document,
+      "hook",
+      { x: 0, y: 0, width: 1, height: 1 },
+      onChange
+    );
+    observer.start();
+    onChange.mockClear();
+
+    status.className = "pipeline-status-success";
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0]?.[0].aria).toContain("class:pipeline-status-success");
     observer.stop();
   });
 

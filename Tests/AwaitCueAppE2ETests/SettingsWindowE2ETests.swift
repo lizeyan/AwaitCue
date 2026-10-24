@@ -5,6 +5,19 @@ import Testing
 
 @Suite("macOS 设置窗口用户链路", .serialized)
 struct SettingsWindowE2ETests {
+    @Test("Safari App Group 不可用时设置页显示明确原因")
+    func missingSafariAppGroupHasActionableStatus() {
+        #expect(
+            AwaitCueApplicationModel.safariBridgeStartupStatus(containerURL: nil)
+                == "App Group 不可用；请安装带有效 Apple 签名与配置文件的 AwaitCue。"
+        )
+        #expect(
+            AwaitCueApplicationModel.safariBridgeStartupStatus(
+                containerURL: URL(fileURLWithPath: "/tmp/awaitcue-app-group", isDirectory: true)
+            ) == "等待扩展连接"
+        )
+    }
+
     @MainActor
     @Test("用户点击设置后看到屏内且尺寸可用的设置窗口")
     func settingsActionPresentsUsableWindow() throws {
@@ -52,13 +65,13 @@ struct SettingsWindowE2ETests {
         let first = try settingsWindow()
         first.performClose(nil)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        #expect(!NSApp.windows.contains { $0.title == "AwaitCue 设置" && $0.isVisible })
 
         controller.present()
 
         let second = try settingsWindow()
         defer { second.performClose(nil) }
         #expect(second.isVisible)
-        #expect(second !== first)
     }
 
     @MainActor
