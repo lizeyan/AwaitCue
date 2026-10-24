@@ -68,12 +68,39 @@ describe("DOM evidence", () => {
     expect(evidence.aria).toContain("class:atom-pipeline-icon-check-circle-fill");
   });
 
+  it("does not expose text hidden by CSS visibility", () => {
+    const span = document.querySelector<HTMLElement>("#inside span")!;
+    span.style.visibility = "hidden";
+
+    const evidence = collectEvidence(document, "hook", { x: 0.05, y: 0.1, width: 0.4, height: 0.4 });
+
+    expect(evidence.text).not.toContain("Succeeded");
+  });
+
   it("normalizes repeated whitespace and caps collected text", () => {
     const span = document.querySelector("#inside span")!;
     span.textContent = `  ${"word ".repeat(2_000)}  `;
     const evidence = collectEvidence(document, "hook", { x: 0, y: 0, width: 1, height: 1 });
     expect(evidence.text.length).toBe(4_000);
     expect(evidence.text).toContain("word word");
+    expect(new TextEncoder().encode(JSON.stringify(evidence)).byteLength).toBeLessThan(24_000);
+  });
+
+  it("extracts a large selected DOM within the interaction budget", () => {
+    document.body.innerHTML = Array.from(
+      { length: 5_000 },
+      (_, index) => `<span class="status-${index % 2 === 0 ? "success" : "pending"}">Node ${index}</span>`
+    ).join("");
+    for (const element of document.querySelectorAll<HTMLElement>("span")) {
+      vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect(0, 0, 100, 20));
+    }
+
+    const startedAt = performance.now();
+    const evidence = collectEvidence(document, "large", { x: 0, y: 0, width: 1, height: 1 });
+    const elapsed = performance.now() - startedAt;
+
+    expect(evidence.text.length).toBe(4_000);
+    expect(elapsed).toBeLessThan(1_500);
   });
 
   it("emits only when the evidence fingerprint changes", async () => {
@@ -88,6 +115,18 @@ describe("DOM evidence", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(onChange.mock.calls.length).toBeGreaterThanOrEqual(2);
 
+    observer.stop();
+  });
+
+  it("ignores mutations whose rendered evidence stays outside the region", async () => {
+    const onChange = vi.fn();
+    const observer = new EvidenceObserver(document, "hook", { x: 0.05, y: 0.1, width: 0.4, height: 0.4 }, onChange);
+    observer.start();
+
+    document.querySelector<HTMLElement>("#outside")!.textContent = "Changed secret outside region";
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
     observer.stop();
   });
 
