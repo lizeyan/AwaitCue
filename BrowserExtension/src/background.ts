@@ -314,8 +314,15 @@ async function installationIdentity(): Promise<string> {
 }
 
 async function bind(command: Extract<NativeCommand, { type: "bindTarget" }>): Promise<void> {
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(command.tabID);
+  } catch {
+    // 重新启动浏览器后持久化 tab ID 不会自动指向同 URL 的新 tab；必须把原 Target 标成不可用。
+    await markTargetUnavailable(command.hookID, "tab_closed");
+    return;
+  }
   await ensureHostPermission(command.tabID);
-  const tab = await chrome.tabs.get(command.tabID);
   if (!tab.url) throw new Error("Target tab has no URL");
   if (!tabIdentityMatches(tab.url, command.expectedURL, command.expectedHost)) {
     await markTargetUnavailable(command.hookID, "tab_identity_mismatch");
