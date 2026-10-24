@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450">
+  <rect width="800" height="450" fill="#f6f8fa"/><rect x="45" y="38" width="710" height="374" rx="20" fill="#fff" stroke="#d0d7de" stroke-width="3"/>
+  <text x="82" y="92" font-family="-apple-system,sans-serif" font-size="27" font-weight="700">Release pipeline</text>
+  <rect x="575" y="59" width="130" height="46" rx="23" fill="#ffebe9"/><text x="606" y="90" font-family="-apple-system,sans-serif" font-size="20" fill="#cf222e">FAILED</text>
+  <text x="82" y="145" font-family="-apple-system,sans-serif" font-size="18" fill="#656d76">CN production branch</text>
+  <circle cx="107" cy="211" r="24" fill="#2da44e"/><path d="M96 211l8 8 16-19" fill="none" stroke="#fff" stroke-width="7"/>
+  <text x="150" y="205" font-family="-apple-system,sans-serif" font-size="27" font-weight="700">Full deployment</text><text x="150" y="238" font-family="-apple-system,sans-serif" font-size="18" fill="#57606a">Completed · 6m 19s</text>
+  <line x1="82" y1="276" x2="706" y2="276" stroke="#d8dee4"/>
+  <circle cx="107" cy="333" r="24" fill="#cf222e"/><path d="M97 323l20 20m0-20l-20 20" stroke="#fff" stroke-width="7"/>
+  <text x="150" y="327" font-family="-apple-system,sans-serif" font-size="25">Unrelated SG validation</text><text x="150" y="360" font-family="-apple-system,sans-serif" font-size="18" fill="#cf222e">Failed after CN deployment completed</text>
+</svg>

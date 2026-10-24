@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450">
+  <rect width="800" height="450" fill="#eef2f6"/><text x="55" y="60" font-family="-apple-system,sans-serif" font-size="28" font-weight="700">Parallel deployment branches</text>
+  <rect x="55" y="92" width="690" height="122" rx="18" fill="#fff" stroke="#d0d7de"/><text x="85" y="128" font-family="-apple-system,sans-serif" font-size="18" fill="#656d76">Branch A</text>
+  <circle cx="112" cy="166" r="22" fill="#2da44e"/><path d="M102 166l7 7 15-17" fill="none" stroke="#fff" stroke-width="6"/><text x="155" y="174" font-family="-apple-system,sans-serif" font-size="27">Production deployment</text><text x="565" y="174" font-family="-apple-system,sans-serif" font-size="19" fill="#2da44e">Complete</text>
+  <rect x="55" y="244" width="690" height="122" rx="18" fill="#fff" stroke="#d0d7de"/><text x="85" y="280" font-family="-apple-system,sans-serif" font-size="18" fill="#656d76">Branch B</text>
+  <circle cx="112" cy="318" r="22" fill="#d8dee4" stroke="#8c959f" stroke-width="3"/><text x="155" y="326" font-family="-apple-system,sans-serif" font-size="27">Production deployment</text><text x="565" y="326" font-family="-apple-system,sans-serif" font-size="19" fill="#8c959f">Pending</text>
+  <text x="55" y="414" font-family="-apple-system,sans-serif" font-size="18" fill="#656d76">No target branch was specified.</text>
+</svg>

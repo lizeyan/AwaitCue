@@ -45,7 +45,7 @@
       "kind": "condition",
       "expected": "uncertain",
       "condition": "Deployment has succeeded and all production instances are healthy.",
-      "tags": ["browser", "dom+image", "uncertain"],
+      "tags": ["browser", "dom+image", "uncertain", "scenario:status-missing"],
       "evidence": {
         "textFile": "fixtures/dom/condition-ambiguous.txt",
         "image": "fixtures/images/condition-ambiguous.png"
@@ -56,14 +56,14 @@
       "kind": "condition",
       "expected": "uncertain",
       "condition": "Deployment has succeeded and all production instances are healthy.",
-      "tags": ["app", "image-only", "uncertain"],
+      "tags": ["app", "image-only", "uncertain", "scenario:status-missing"],
       "evidence": { "image": "fixtures/images/condition-ambiguous.png" }
     },
     {
       "id": "interruptibility-browser-interruptible",
       "kind": "interruptibility",
       "expected": "interruptible",
-      "tags": ["browser", "dom+image", "article"],
+      "tags": ["browser", "dom+image", "article", "scenario:article-reading"],
       "evidence": {
         "textFile": "fixtures/dom/interrupt-reading.txt",
         "image": "fixtures/images/interrupt-reading.png"
@@ -73,14 +73,14 @@
       "id": "interruptibility-app-interruptible",
       "kind": "interruptibility",
       "expected": "interruptible",
-      "tags": ["app", "image-only", "article"],
+      "tags": ["app", "image-only", "article", "scenario:article-reading"],
       "evidence": { "image": "fixtures/images/interrupt-reading.png" }
     },
     {
       "id": "interruptibility-browser-not-interruptible",
       "kind": "interruptibility",
       "expected": "notInterruptible",
-      "tags": ["browser", "dom+image", "focused-work"],
+      "tags": ["browser", "dom+image", "focused-work", "scenario:code-debugging"],
       "evidence": {
         "textFile": "fixtures/dom/interrupt-coding.txt",
         "image": "fixtures/images/interrupt-coding.png"
@@ -90,14 +90,14 @@
       "id": "interruptibility-app-not-interruptible",
       "kind": "interruptibility",
       "expected": "notInterruptible",
-      "tags": ["app", "image-only", "focused-work"],
+      "tags": ["app", "image-only", "focused-work", "scenario:code-debugging"],
       "evidence": { "image": "fixtures/images/interrupt-coding.png" }
     },
     {
       "id": "interruptibility-browser-uncertain",
       "kind": "interruptibility",
       "expected": "uncertain",
-      "tags": ["browser", "dom+image", "uncertain"],
+      "tags": ["browser", "dom+image", "uncertain", "scenario:mixed-focus-unknown"],
       "evidence": {
         "textFile": "fixtures/dom/interrupt-ambiguous.txt",
         "image": "fixtures/images/interrupt-ambiguous.png"
@@ -107,8 +107,171 @@
       "id": "interruptibility-app-uncertain",
       "kind": "interruptibility",
       "expected": "uncertain",
-      "tags": ["app", "image-only", "uncertain"],
+      "tags": ["app", "image-only", "uncertain", "scenario:mixed-focus-unknown"],
       "evidence": { "image": "fixtures/images/interrupt-ambiguous.png" }
+    },
+    {
+      "id": "condition-browser-local-success-overall-failed",
+      "kind": "condition",
+      "expected": "matched",
+      "condition": "The CN full deployment step completed successfully.",
+      "tags": ["browser", "dom+image", "scenario:overall-failed-local-success"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-local-success-overall-failed.txt",
+        "image": "fixtures/images/condition-local-success-overall-failed.png"
+      }
+    },
+    {
+      "id": "condition-app-local-success-overall-failed",
+      "kind": "condition",
+      "expected": "matched",
+      "condition": "The CN full deployment step completed successfully.",
+      "tags": ["app", "image-only", "scenario:overall-failed-local-success"],
+      "evidence": { "image": "fixtures/images/condition-local-success-overall-failed.png" }
+    },
+    {
+      "id": "condition-browser-duplicate-name-conflict",
+      "kind": "condition",
+      "expected": "uncertain",
+      "condition": "The production deployment is complete.",
+      "tags": ["browser", "dom+image", "scenario:duplicate-name-conflict"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-duplicate.txt",
+        "image": "fixtures/images/condition-duplicate.png"
+      }
+    },
+    {
+      "id": "condition-app-duplicate-name-conflict",
+      "kind": "condition",
+      "expected": "uncertain",
+      "condition": "The production deployment is complete.",
+      "tags": ["app", "image-only", "scenario:duplicate-name-conflict"],
+      "evidence": { "image": "fixtures/images/condition-duplicate.png" }
+    },
+    {
+      "id": "condition-browser-input-text-not-fact",
+      "kind": "condition",
+      "expected": "notMatched",
+      "condition": "Deployment succeeded.",
+      "tags": ["browser", "dom+image", "scenario:condition-text-not-fact"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-input-text.txt",
+        "image": "fixtures/images/condition-input-text.png"
+      }
+    },
+    {
+      "id": "condition-app-input-text-not-fact",
+      "kind": "condition",
+      "expected": "notMatched",
+      "condition": "Deployment succeeded.",
+      "tags": ["app", "image-only", "scenario:condition-text-not-fact"],
+      "evidence": { "image": "fixtures/images/condition-input-text.png" }
+    },
+    {
+      "id": "condition-browser-explicit-failure",
+      "kind": "condition",
+      "expected": "notMatched",
+      "condition": "Production deployment succeeded.",
+      "tags": ["browser", "dom+image", "scenario:explicit-failure"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-failed.txt",
+        "image": "fixtures/images/condition-failed.png"
+      }
+    },
+    {
+      "id": "condition-app-explicit-failure",
+      "kind": "condition",
+      "expected": "notMatched",
+      "condition": "Production deployment succeeded.",
+      "tags": ["app", "image-only", "scenario:explicit-failure"],
+      "evidence": { "image": "fixtures/images/condition-failed.png" }
+    },
+    {
+      "id": "condition-browser-queued",
+      "kind": "condition",
+      "expected": "notMatched",
+      "condition": "Production deployment completed.",
+      "tags": ["browser", "dom+image", "scenario:queued"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-queued.txt",
+        "image": "fixtures/images/condition-queued.png"
+      }
+    },
+    {
+      "id": "condition-app-queued",
+      "kind": "condition",
+      "expected": "notMatched",
+      "condition": "Production deployment completed.",
+      "tags": ["app", "image-only", "scenario:queued"],
+      "evidence": { "image": "fixtures/images/condition-queued.png" }
+    },
+    {
+      "id": "interruptibility-browser-meeting",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "tags": ["browser", "dom+image", "scenario:meeting"],
+      "evidence": {
+        "textFile": "fixtures/dom/interrupt-meeting.txt",
+        "image": "fixtures/images/interrupt-meeting.png"
+      }
+    },
+    {
+      "id": "interruptibility-app-meeting",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "tags": ["app", "image-only", "scenario:meeting"],
+      "evidence": { "image": "fixtures/images/interrupt-meeting.png" }
+    },
+    {
+      "id": "interruptibility-browser-presentation",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "tags": ["browser", "dom+image", "scenario:presentation"],
+      "evidence": {
+        "textFile": "fixtures/dom/interrupt-presentation.txt",
+        "image": "fixtures/images/interrupt-presentation.png"
+      }
+    },
+    {
+      "id": "interruptibility-app-presentation",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "tags": ["app", "image-only", "scenario:presentation"],
+      "evidence": { "image": "fixtures/images/interrupt-presentation.png" }
+    },
+    {
+      "id": "interruptibility-browser-document-writing",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "tags": ["browser", "dom+image", "scenario:document-writing"],
+      "evidence": {
+        "textFile": "fixtures/dom/interrupt-writing.txt",
+        "image": "fixtures/images/interrupt-writing.png"
+      }
+    },
+    {
+      "id": "interruptibility-app-document-writing",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "tags": ["app", "image-only", "scenario:document-writing"],
+      "evidence": { "image": "fixtures/images/interrupt-writing.png" }
+    },
+    {
+      "id": "interruptibility-browser-chat-reading",
+      "kind": "interruptibility",
+      "expected": "interruptible",
+      "tags": ["browser", "dom+image", "scenario:chat-reading"],
+      "evidence": {
+        "textFile": "fixtures/dom/interrupt-chat.txt",
+        "image": "fixtures/images/interrupt-chat.png"
+      }
+    },
+    {
+      "id": "interruptibility-app-chat-reading",
+      "kind": "interruptibility",
+      "expected": "interruptible",
+      "tags": ["app", "image-only", "scenario:chat-reading"],
+      "evidence": { "image": "fixtures/images/interrupt-chat.png" }
     }
   ]
 }

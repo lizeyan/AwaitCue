@@ -1,0 +1,10 @@
+Page title: Parallel deployment branches
+[85,128] Branch A
+[112,166] class:status-success
+[155,174] Production deployment
+[565,174] Complete
+[85,280] Branch B
+[112,318] class:status-pending
+[155,326] Production deployment
+[565,326] Pending
+[55,414] No target branch was specified.

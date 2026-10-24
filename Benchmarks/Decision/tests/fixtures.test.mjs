@@ -13,6 +13,28 @@ test("canonical fixtures cover every decision and evidence surface without secre
   const source = await readFile(manifestPath, "utf8");
   assert.doesNotMatch(source, /(api[_-]?key|bearer\s+|bytedance\.net|aidp\.)/i);
   const manifest = validateBenchmarkManifest(JSON.parse(source), benchmarkDirectory);
+  assert.equal(manifest.cases.length, 30);
+  const requiredScenarios = new Set([
+    "scenario:overall-failed-local-success",
+    "scenario:duplicate-name-conflict",
+    "scenario:condition-text-not-fact",
+    "scenario:explicit-failure",
+    "scenario:queued",
+    "scenario:status-missing",
+    "scenario:meeting",
+    "scenario:presentation",
+    "scenario:document-writing",
+    "scenario:code-debugging",
+    "scenario:article-reading",
+    "scenario:chat-reading",
+    "scenario:mixed-focus-unknown",
+  ]);
+  const actualScenarios = new Set(
+    manifest.cases.flatMap((entry) => entry.tags.filter((tag) => tag.startsWith("scenario:"))),
+  );
+  for (const scenario of requiredScenarios) {
+    assert.ok(actualScenarios.has(scenario), `missing fixed benchmark ${scenario}`);
+  }
   const expectedCases = new Set([
     "condition:matched:browser",
     "condition:matched:app",

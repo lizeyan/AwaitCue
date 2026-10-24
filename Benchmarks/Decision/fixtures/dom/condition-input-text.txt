@@ -1,0 +1,6 @@
+Page title: Create monitor
+[116,145] Condition text
+[138,205] input value: Deployment succeeded
+[116,277] Observed target status
+[148,328] class:status-waiting
+[176,337] Waiting for deployment to start

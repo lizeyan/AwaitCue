@@ -10,8 +10,8 @@ HTTP library, or model implementation produced the answer.
 
 ## Fixed sample set
 
-`benchmark.v1.json` contains 12 synthetic, non-sensitive cases. Every decision label is represented
-on both evidence surfaces:
+`benchmark.v1.json` contains 30 synthetic, non-sensitive cases. Every decision label is represented
+on both evidence surfaces, and the corpus includes the recurrent ambiguity and focus cases below:
 
 | Decision | Browser DOM + image | App image-only |
 |---|---:|---:|
@@ -21,6 +21,12 @@ on both evidence surfaces:
 | Interruptible | yes | yes |
 | Not interruptible | yes | yes |
 | Interruptibility uncertain | yes | yes |
+
+Condition regression scenarios include overall failure with a locally successful target, duplicate
+same-name nodes with conflicting states, Condition text visible inside an input field, explicit
+failure, queued/running work, and missing status. Interruptibility scenarios include meetings,
+full-screen presentations, active document writing, production debugging, ordinary article reading,
+idle chat reading, and mixed-window focus that cannot be identified reliably.
 
 The PNGs are generated from the checked-in SVG sources. They contain no user screenshots, internal
 URLs, accounts, API keys, or company data. Labels are independent literals defined by the scenario,
@@ -56,6 +62,11 @@ node Scripts/run-decision-benchmark.mjs \
 Live runs are intentionally not part of required GitHub CI: they cost tokens, depend on an external
 provider, and measure nondeterministic behavior. CI verifies that the fixed corpus and scoring logic
 remain valid. Release candidates should run the live benchmark separately.
+
+Maintainers can also run the manual **Decision benchmark** GitHub Actions workflow after configuring
+the `AWAITCUE_BENCHMARK_BASE_URL`, `AWAITCUE_BENCHMARK_API_KEY`, and
+`AWAITCUE_BENCHMARK_MODEL` repository secrets. The workflow uploads the aggregate JSON report and
+enforces the requested accuracy and stability thresholds without exposing raw evidence or secrets.
 
 To compare a different model or prompt without changing the corpus:
 

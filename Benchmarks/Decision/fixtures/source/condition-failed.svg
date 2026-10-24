@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450">
+  <rect width="800" height="450" fill="#f6f8fa"/><rect x="70" y="55" width="660" height="340" rx="24" fill="#fff" stroke="#d0d7de" stroke-width="3"/>
+  <text x="110" y="116" font-family="-apple-system,sans-serif" font-size="28">Production deployment</text><circle cx="145" cy="220" r="38" fill="#cf222e"/>
+  <path d="M130 205l30 30m0-30l-30 30" stroke="#fff" stroke-width="9"/><text x="210" y="214" font-family="-apple-system,sans-serif" font-size="38" font-weight="700" fill="#cf222e">FAILED</text>
+  <text x="210" y="258" font-family="-apple-system,sans-serif" font-size="21" fill="#57606a">Health check returned HTTP 503.</text><text x="110" y="330" font-family="Menlo,monospace" font-size="18" fill="#cf222e">error: 12 instances unavailable</text>
+</svg>
