@@ -132,12 +132,15 @@ struct AwaitCueSettingsView: View {
             Section {
                 TextField("Base URL", text: $model.modelBaseURL)
                     .font(.system(.body, design: .monospaced))
+                    .accessibilityIdentifier("awaitcue.settings.model-base-url")
                     .accessibilityHint("可填写服务 Base URL，也可填写完整的 /responses 地址。")
                     .onChange(of: model.modelBaseURL) { _, _ in
                         model.confirmedAPIHostname = false
                     }
                 SecureField("API Key", text: $model.apiKey)
+                    .accessibilityIdentifier("awaitcue.settings.api-key")
                 TextField("模型", text: $model.modelName)
+                    .accessibilityIdentifier("awaitcue.settings.model-name")
             } header: {
                 Text("模型服务")
             } footer: {
@@ -150,6 +153,7 @@ struct AwaitCueSettingsView: View {
                         Text("我确认截图和页面信息将发送到 **\(host)**，其数据保留规则由该服务提供方决定。")
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    .accessibilityIdentifier("awaitcue.settings.confirm-hostname")
                 } else {
                     Text("请输入包含协议和 hostname 的有效 Base URL。")
                         .foregroundStyle(.red)
@@ -166,6 +170,7 @@ struct AwaitCueSettingsView: View {
                     Button("删除配置", role: .destructive) {
                         Task { await model.deleteModelConfiguration() }
                     }
+                    .accessibilityIdentifier("awaitcue.settings.delete-model")
                     Spacer()
                     Button("测试并保存") {
                         Task { await model.testAndSaveModelConfiguration() }
@@ -173,6 +178,7 @@ struct AwaitCueSettingsView: View {
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.modelStatus == .testing)
+                    .accessibilityIdentifier("awaitcue.settings.test-model")
                 }
             }
         }

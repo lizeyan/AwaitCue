@@ -8,6 +8,29 @@ import Testing
 
 @Suite("macOS 创建 Hook 用户链路", .serialized)
 struct HookCreationWindowE2ETests {
+    @Test("live E2E 只有显式测试标记才能隔离 Hook 数据库")
+    func hookDatabaseIsolationRequiresExplicitE2EFlag() {
+        let defaultDirectory = URL(fileURLWithPath: "/tmp/awaitcue-default", isDirectory: true)
+        let isolatedDirectory = "/tmp/awaitcue-isolated"
+
+        #expect(
+            AwaitCueApplicationModel.hookDatabaseURL(
+                environment: ["AWAITCUE_E2E_DATA_DIRECTORY": isolatedDirectory],
+                defaultDirectory: defaultDirectory
+            ) == defaultDirectory.appendingPathComponent("awaitcue.sqlite3")
+        )
+        #expect(
+            AwaitCueApplicationModel.hookDatabaseURL(
+                environment: [
+                    "AWAITCUE_E2E": "1",
+                    "AWAITCUE_E2E_DATA_DIRECTORY": isolatedDirectory,
+                ],
+                defaultDirectory: defaultDirectory
+            ) == URL(fileURLWithPath: isolatedDirectory, isDirectory: true)
+                .appendingPathComponent("awaitcue.sqlite3")
+        )
+    }
+
     @Test("live E2E 只在显式环境标记下隔离 Keychain 边界")
     func keychainBoundaryRequiresExplicitE2EFlag() {
         #expect(AwaitCueApplicationModel.shouldAccessKeychain(environment: [:]))
@@ -185,6 +208,7 @@ struct HookCreationWindowE2ETests {
             )
         )
     }
+
 }
 
 private func fixtureImage() -> CGImage {

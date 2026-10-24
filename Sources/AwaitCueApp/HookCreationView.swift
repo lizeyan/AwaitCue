@@ -24,17 +24,26 @@ struct HookCreationView: View {
 
             Picker("类型", selection: $kind) {
                 ForEach(HookKind.allCases) { kind in
-                    Text(kind.rawValue).tag(kind)
+                    Text(kind.rawValue)
+                        .tag(kind)
+                        .accessibilityIdentifier(
+                            kind == .condition
+                                ? "awaitcue.hook.kind.condition"
+                                : "awaitcue.hook.kind.delay"
+                        )
                 }
             }
             .pickerStyle(.segmented)
+            .accessibilityIdentifier("awaitcue.hook.kind")
 
             TextField("通知标题", text: $title)
+                .accessibilityIdentifier("awaitcue.hook.title")
             if kind == .condition {
                 TextField("例如：编译成功或失败时", text: $conditionText, axis: .vertical)
                     .lineLimit(3 ... 6)
+                    .accessibilityIdentifier("awaitcue.hook.condition")
                 if model.modelStatus != .connected {
-                    Label("条件 Hook 需要先在设置中测试并保存图片模型。", systemImage: "exclamationmark.triangle")
+                    Label("条件 Hook 需要先在设置中测试并保存支持图片输入的决策模型。", systemImage: "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -47,10 +56,12 @@ struct HookCreationView: View {
                     Text("30 分钟").tag(TimeInterval(1_800))
                     Text("1 小时").tag(TimeInterval(3_600))
                 }
+                .accessibilityIdentifier("awaitcue.hook.minimum-wait")
             }
 
             HStack {
                 Button("取消", role: .cancel) { model.dismissPendingTarget() }
+                    .accessibilityIdentifier("awaitcue.hook.cancel")
                 Spacer()
                 if isCreating || model.isPreparingCondition { ProgressView() }
                 if kind == .condition, model.conditionPreview == nil {
@@ -59,12 +70,14 @@ struct HookCreationView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(!canAnalyze || model.isPreparingCondition)
+                    .accessibilityIdentifier("awaitcue.hook.analyze")
                 } else {
                     Button(kind == .condition ? "确认并创建" : "创建") {
                         Task { await create() }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(!canCreate || isCreating)
+                    .accessibilityIdentifier("awaitcue.hook.create")
                 }
             }
         }
@@ -83,10 +96,12 @@ struct HookCreationView: View {
             HStack {
                 Image(systemName: targetIcon)
                 Text(defaultTitle)
+                    .accessibilityIdentifier("awaitcue.hook.target-title")
                 Spacer()
             }
             .padding(.vertical, 4)
         }
+        .accessibilityIdentifier("awaitcue.hook.target-summary")
     }
 
     private var canCreate: Bool {
@@ -137,7 +152,7 @@ struct HookCreationView: View {
     @ViewBuilder
     private var conditionAnalysisStatus: some View {
         if model.isPreparingCondition {
-            Label("正在分析框选截图和当前内容…", systemImage: "sparkles")
+            Label(preparingConditionLabel, systemImage: "sparkles")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else if let error = model.conditionPreparationError {
@@ -146,6 +161,13 @@ struct HookCreationView: View {
                 .foregroundStyle(.red)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var preparingConditionLabel: String {
+        if case .browser = model.pendingTarget {
+            return "正在分析框选页面内容…"
+        }
+        return "正在分析框选截图…"
     }
 
     @ViewBuilder
