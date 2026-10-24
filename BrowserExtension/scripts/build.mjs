@@ -16,8 +16,9 @@ await build({
   platform: "browser",
   target: "chrome116",
   outdir: outdir.pathname,
-  sourcemap: true
+  sourcemap: false
 });
 
 await cp(new URL("../manifest.json", import.meta.url), new URL("manifest.json", outdir));
 await cp(new URL("../offscreen.html", import.meta.url), new URL("offscreen.html", outdir));
+await cp(new URL("../icons/", import.meta.url), new URL("icons/", outdir), { recursive: true });
