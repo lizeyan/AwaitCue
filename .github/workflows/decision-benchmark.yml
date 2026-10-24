@@ -1,0 +1,58 @@
+name: Decision benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      repetitions:
+        description: Repetitions per fixed case
+        required: true
+        default: "5"
+      minimum_accuracy:
+        description: Required overall accuracy
+        required: true
+        default: "0.90"
+      minimum_stability:
+        description: Required mean case stability
+        required: true
+        default: "0.90"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Live decision quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Validate required model secrets
+        env:
+          AWAITCUE_BASE_URL: ${{ secrets.AWAITCUE_BENCHMARK_BASE_URL }}
+          AWAITCUE_API_KEY: ${{ secrets.AWAITCUE_BENCHMARK_API_KEY }}
+          AWAITCUE_MODEL: ${{ secrets.AWAITCUE_BENCHMARK_MODEL }}
+        run: |
+          test -n "${AWAITCUE_BASE_URL}"
+          test -n "${AWAITCUE_API_KEY}"
+          test -n "${AWAITCUE_MODEL}"
+      - name: Run fixed decision benchmark
+        env:
+          AWAITCUE_BASE_URL: ${{ secrets.AWAITCUE_BENCHMARK_BASE_URL }}
+          AWAITCUE_API_KEY: ${{ secrets.AWAITCUE_BENCHMARK_API_KEY }}
+          AWAITCUE_MODEL: ${{ secrets.AWAITCUE_BENCHMARK_MODEL }}
+        run: |
+          node Scripts/run-decision-benchmark.mjs \
+            --repetitions "${{ inputs.repetitions }}" \
+            --minimum-accuracy "${{ inputs.minimum_accuracy }}" \
+            --minimum-stability "${{ inputs.minimum_stability }}" \
+            --output decision-benchmark-report.json
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: decision-benchmark-report
+          path: decision-benchmark-report.json
+          if-no-files-found: warn
