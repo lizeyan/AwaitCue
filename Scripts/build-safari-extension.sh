@@ -59,6 +59,8 @@ if [[ ! -d "${product_path}" ]]; then
     exit 1
 fi
 
+# 干净 checkout 还没有根目录 dist；构建脚本必须自行建立输出边界，不能依赖旧产物。
+mkdir -p "$(dirname "${output_path}")"
 rm -rf "${output_path}"
 # Xcode 26 会附加 com.apple.provenance；构建产物复制时不得把该主机状态带进可发布 bundle。
 cp -R -X "${product_path}" "${output_path}"
