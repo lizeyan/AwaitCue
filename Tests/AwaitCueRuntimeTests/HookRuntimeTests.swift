@@ -1211,6 +1211,207 @@ struct HookRuntimeTests {
         #expect(await effects.deliveredHookIDs == [due.id])
     }
 
+    @Test("目标已关闭的 Delay Hook 到时后进入 Target Unavailable 且不通知")
+    func closedDelayTargetDoesNotNotify() async throws {
+        let now = Date(timeIntervalSince1970: 102_250)
+        let hook = makeDelayHook(
+            id: "00000000-0000-0000-0000-000000001006",
+            earliestAttentionAt: now,
+            now: now.addingTimeInterval(-60)
+        )
+        let repository = RuntimeHookRepository(hooks: [hook])
+        let activeEvidence = RecordingActiveEvidenceProvider(
+            result: .success(ModelEvidence(text: "不应读取"))
+        )
+        let decisions = RecordingDecisionProvider(
+            conditionResults: [],
+            interruptibilityResults: [
+                .success(InterruptibilityEvaluation(decision: .interruptible, confidence: 1)),
+            ]
+        )
+        let effects = RecordingEffectExecutor()
+        let runtime = HookRuntime(
+            coordinator: HookCoordinator(repository: repository),
+            conditionEvidenceProvider: RecordingConditionEvidenceProvider(
+                result: .success(ModelEvidence(text: "unused"))
+            ),
+            activeEvidenceProvider: activeEvidence,
+            decisionProvider: decisions,
+            effectExecutor: effects,
+            clock: FixedRuntimeClock(now: now),
+            targetAvailabilityProvider: FixedTargetAvailabilityProvider(
+                availability: .targetUnavailable
+            )
+        )
+
+        try await runtime.advanceMinimumWaits()
+
+        let stored = try #require(await repository.hooks.first)
+        #expect(stored.state == .targetUnavailable)
+        #expect(await activeEvidence.callCount == 0)
+        #expect(await decisions.interruptibilityCallCount == 0)
+        #expect(await effects.deliveredHookIDs.isEmpty)
+    }
+
+    @Test("等待合适时机期间目标关闭也不会发送通知")
+    func closedSatisfiedTargetDoesNotNotify() async throws {
+        let now = Date(timeIntervalSince1970: 102_300)
+        let hook = makeWaitingHook(
+            id: "00000000-0000-0000-0000-000000001007",
+            now: now
+        )
+        let repository = RuntimeHookRepository(hooks: [hook])
+        let activeEvidence = RecordingActiveEvidenceProvider(
+            result: .success(ModelEvidence(text: "不应读取"))
+        )
+        let decisions = RecordingDecisionProvider(
+            conditionResults: [],
+            interruptibilityResults: [
+                .success(InterruptibilityEvaluation(decision: .interruptible, confidence: 1)),
+            ]
+        )
+        let effects = RecordingEffectExecutor()
+        let runtime = HookRuntime(
+            coordinator: HookCoordinator(repository: repository),
+            conditionEvidenceProvider: RecordingConditionEvidenceProvider(
+                result: .success(ModelEvidence(text: "unused"))
+            ),
+            activeEvidenceProvider: activeEvidence,
+            decisionProvider: decisions,
+            effectExecutor: effects,
+            clock: FixedRuntimeClock(now: now),
+            targetAvailabilityProvider: FixedTargetAvailabilityProvider(
+                availability: .targetUnavailable
+            )
+        )
+
+        try await runtime.evaluateInterruptibility()
+
+        let stored = try #require(await repository.hooks.first)
+        #expect(stored.state == .targetUnavailable)
+        #expect(await activeEvidence.callCount == 0)
+        #expect(await decisions.interruptibilityCallCount == 0)
+        #expect(await effects.deliveredHookIDs.isEmpty)
+    }
+
+    @Test("Target 检查暂时阻塞后会重试并在恢复时继续通知")
+    func targetAvailabilityBlockRetriesAndRecovers() async throws {
+        let now = Date(timeIntervalSince1970: 102_350)
+        let hook = makeWaitingHook(
+            id: "00000000-0000-0000-0000-000000001008",
+            now: now
+        )
+        let repository = RuntimeHookRepository(hooks: [hook])
+        let clock = ControllableRuntimeClock(now: now)
+        let availability = SequencedTargetAvailabilityProvider(results: [
+            .blocked(.browserExtensionDisconnected),
+            .available,
+        ])
+        let effects = RecordingEffectExecutor()
+        let runtime = HookRuntime(
+            coordinator: HookCoordinator(repository: repository),
+            conditionEvidenceProvider: RecordingConditionEvidenceProvider(
+                result: .success(ModelEvidence(text: "unused"))
+            ),
+            activeEvidenceProvider: RecordingActiveEvidenceProvider(
+                result: .success(ModelEvidence(text: "适合打断"))
+            ),
+            decisionProvider: RecordingDecisionProvider(
+                conditionResults: [],
+                interruptibilityResults: [
+                    .success(InterruptibilityEvaluation(decision: .interruptible, confidence: 1)),
+                ]
+            ),
+            effectExecutor: effects,
+            clock: clock,
+            targetAvailabilityProvider: availability
+        )
+
+        try await runtime.evaluateInterruptibility()
+        try await waitUntil { await clock.pendingSleepCount == 1 }
+        #expect((await repository.hooksByID[hook.id])?.blockReason == .browserExtensionDisconnected)
+        #expect(await clock.deadlines == [now.addingTimeInterval(30)])
+
+        await clock.fireNextSleep()
+        try await waitUntil { (await repository.hooksByID[hook.id])?.state == .notified }
+
+        #expect((await repository.hooksByID[hook.id])?.blockReason == nil)
+        #expect(await effects.deliveredHookIDs == [hook.id])
+        await runtime.stop()
+    }
+
+    @Test("到时但 Target 暂不可用的 Minimum Wait Hook 由共享重试恢复并只判断一次")
+    func dueMinimumWaitAvailabilityRetryAdvancesAndSharesDecision() async throws {
+        let now = Date(timeIntervalSince1970: 102_400)
+        let first = makeDelayHook(
+            id: "00000000-0000-0000-0000-000000001009",
+            earliestAttentionAt: now,
+            now: now.addingTimeInterval(-120)
+        )
+        let second = makeDelayHook(
+            id: "00000000-0000-0000-0000-000000001010",
+            earliestAttentionAt: now,
+            now: now.addingTimeInterval(-60)
+        )
+        let repository = RuntimeHookRepository(hooks: [first, second])
+        let clock = ControllableRuntimeClock(now: now)
+        let availability = SequencedTargetAvailabilityProvider(results: [
+            .blocked(.browserExtensionDisconnected),
+            .retryLater,
+            .available,
+            .available,
+        ])
+        let activeEvidence = RecordingActiveEvidenceProvider(
+            result: .success(ModelEvidence(text: "适合打断"))
+        )
+        let decisions = RecordingDecisionProvider(
+            conditionResults: [],
+            interruptibilityResults: [
+                .success(InterruptibilityEvaluation(decision: .interruptible, confidence: 1)),
+            ]
+        )
+        let effects = RecordingEffectExecutor()
+        let runtime = HookRuntime(
+            coordinator: HookCoordinator(repository: repository),
+            conditionEvidenceProvider: RecordingConditionEvidenceProvider(
+                result: .success(ModelEvidence(text: "unused"))
+            ),
+            activeEvidenceProvider: activeEvidence,
+            decisionProvider: decisions,
+            effectExecutor: effects,
+            clock: clock,
+            targetAvailabilityProvider: availability
+        )
+
+        try await runtime.advanceMinimumWaits()
+        try await waitUntil { await clock.pendingSleepCount == 1 }
+
+        let blocked = await repository.hooksByID
+        #expect(blocked[first.id]?.state == .waitingMinimum)
+        #expect(blocked[first.id]?.blockReason == .browserExtensionDisconnected)
+        #expect(blocked[second.id]?.state == .waitingMinimum)
+        #expect(await activeEvidence.callCount == 0)
+        #expect(await decisions.interruptibilityCallCount == 0)
+
+        await clock.fireNextSleep()
+        try await waitUntil {
+            let hooks = await repository.hooksByID
+            return hooks[first.id]?.state == .notified
+                && hooks[second.id]?.state == .notified
+        }
+
+        let recovered = await repository.hooksByID
+        #expect(recovered[first.id]?.blockReason == nil)
+        #expect(recovered[second.id]?.blockReason == nil)
+        let availabilityCallCount = await availability.callCount
+        // 两个 Hook 在推进 Minimum Wait 和共享模型判断前各检查一次 Target，模型仍只共享调用一次。
+        #expect(availabilityCallCount == 6)
+        #expect(await activeEvidence.callCount == 1)
+        #expect(await decisions.interruptibilityCallCount == 1)
+        #expect(await effects.deliveredHookIDs == [first.id, second.id])
+        await runtime.stop()
+    }
+
     @Test("稍后提醒的 Condition Hook 到时后进入共享适合打断判断")
     func advancesSnoozedConditionHook() async throws {
         let now = Date(timeIntervalSince1970: 102_500)
@@ -1504,6 +1705,28 @@ private struct FailingActiveEvidenceProvider: HookRuntimeActiveEvidenceProvider 
 
     func currentEvidence() async throws -> ModelEvidence {
         throw error
+    }
+}
+
+private struct FixedTargetAvailabilityProvider: HookRuntimeTargetAvailabilityProvider {
+    let availability: HookRuntimeTargetAvailability
+
+    func availability(for hook: Hook) async -> HookRuntimeTargetAvailability {
+        availability
+    }
+}
+
+private actor SequencedTargetAvailabilityProvider: HookRuntimeTargetAvailabilityProvider {
+    private var results: [HookRuntimeTargetAvailability]
+    private(set) var callCount = 0
+
+    init(results: [HookRuntimeTargetAvailability]) {
+        self.results = results
+    }
+
+    func availability(for hook: Hook) async -> HookRuntimeTargetAvailability {
+        callCount += 1
+        return results.isEmpty ? .available : results.removeFirst()
     }
 }
 

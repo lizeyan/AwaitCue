@@ -52,6 +52,103 @@ struct HookCoordinatorTests {
         #expect(restored == [active])
     }
 
+    @Test("模型配置删除时只阻塞生命周期允许的 Hook 并保留通知状态与终态历史")
+    func blocksOnlyLifecycleEligibleHooksWhenModelConfigurationIsRemoved() async throws {
+        let now = Date(timeIntervalSince1970: 40_500)
+        let first = try HookFactory.makeDelay(
+            title: "活动一",
+            target: fixtureTarget,
+            minimumDelay: 60,
+            now: now
+        )
+        let second = try HookFactory.makeDelay(
+            title: "活动二",
+            target: fixtureTarget,
+            minimumDelay: 120,
+            now: now.addingTimeInterval(1)
+        )
+        var completed = try HookFactory.makeDelay(
+            title: "已完成",
+            target: fixtureTarget,
+            minimumDelay: 60,
+            now: now.addingTimeInterval(2)
+        )
+        completed.state = .completed
+        var notified = try HookFactory.makeDelay(
+            title: "已通知",
+            target: fixtureTarget,
+            minimumDelay: 60,
+            now: now.addingTimeInterval(3)
+        )
+        notified.state = .notified
+        var delivering = try HookFactory.makeDelay(
+            title: "正在通知",
+            target: fixtureTarget,
+            minimumDelay: 60,
+            now: now.addingTimeInterval(4)
+        )
+        delivering.state = .deliveringNotification
+        let repository = RecordingHookRepository(
+            initialHooks: [first, second, completed, notified, delivering]
+        )
+        let coordinator = HookCoordinator(repository: repository)
+
+        let blocked = try await coordinator.blockActiveHooks(
+            reason: .modelUnavailable,
+            at: now.addingTimeInterval(3)
+        )
+
+        #expect(blocked.count == 2)
+        #expect(blocked.allSatisfy { $0.blockReason == .modelUnavailable })
+        #expect((await repository.currentHooks.first { $0.id == completed.id })?.blockReason == nil)
+        #expect((await repository.currentHooks.first { $0.id == notified.id })?.state == .notified)
+        #expect((await repository.currentHooks.first { $0.id == notified.id })?.blockReason == nil)
+        #expect(
+            (await repository.currentHooks.first { $0.id == delivering.id })?.state
+                == .deliveringNotification
+        )
+        #expect((await repository.currentHooks.first { $0.id == delivering.id })?.blockReason == nil)
+    }
+
+    @Test("浏览器重连只解除扩展断开阻塞而保留其他原因")
+    func unblocksOnlyTheExpectedBrowserReason() async throws {
+        let now = Date(timeIntervalSince1970: 40_800)
+        var disconnected = try HookFactory.makeDelay(
+            title: "扩展断开",
+            target: fixtureTarget,
+            minimumDelay: 60,
+            now: now
+        )
+        disconnected.blockReason = .browserExtensionDisconnected
+        var modelUnavailable = try HookFactory.makeDelay(
+            title: "模型不可用",
+            target: fixtureTarget,
+            minimumDelay: 60,
+            now: now.addingTimeInterval(1)
+        )
+        modelUnavailable.blockReason = .modelUnavailable
+        let repository = RecordingHookRepository(initialHooks: [disconnected, modelUnavailable])
+        let coordinator = HookCoordinator(repository: repository)
+
+        let cleared = try await coordinator.unblockHook(
+            id: disconnected.id,
+            onlyIf: .browserExtensionDisconnected,
+            at: now.addingTimeInterval(2)
+        )
+        let preserved = try await coordinator.unblockHook(
+            id: modelUnavailable.id,
+            onlyIf: .browserExtensionDisconnected,
+            at: now.addingTimeInterval(2)
+        )
+
+        #expect(cleared.blockReason == nil)
+        #expect(preserved.blockReason == .modelUnavailable)
+        #expect(
+            (await repository.currentHooks.first { $0.id == modelUnavailable.id })?.blockReason
+                == .modelUnavailable
+        )
+    }
+
     @Test("协调器支持新增、删除和清空")
     func addDeleteAndDeleteAll() async throws {
         let now = Date(timeIntervalSince1970: 41_000)

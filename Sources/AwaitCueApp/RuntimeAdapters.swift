@@ -72,6 +72,68 @@ struct AppConditionEvidenceProvider: HookRuntimeConditionEvidenceProvider {
     }
 }
 
+/// 在 Runtime 推进通知前验证原窗口或 Chrome tab 仍是用户绑定的同一 Target。
+protocol BrowserTargetAvailabilityChecking: Sendable {
+    func targetIsAvailable(hookID: HookID, target: BrowserTarget) async throws -> Bool
+}
+
+protocol WindowTargetAvailabilityChecking: Sendable {
+    func availability(of target: WindowTarget) async throws -> WindowTargetAvailability
+}
+
+extension NativeBrowserSelectionRelay: BrowserTargetAvailabilityChecking {}
+extension ScreenCaptureService: WindowTargetAvailabilityChecking {}
+
+struct AppTargetAvailabilityProvider: HookRuntimeTargetAvailabilityProvider {
+    let browserChecker: any BrowserTargetAvailabilityChecking
+    let windowChecker: any WindowTargetAvailabilityChecking
+
+    init(browserRelay: NativeBrowserSelectionRelay) {
+        browserChecker = browserRelay
+        windowChecker = ScreenCaptureService()
+    }
+
+    init(
+        browserChecker: any BrowserTargetAvailabilityChecking,
+        windowChecker: any WindowTargetAvailabilityChecking
+    ) {
+        self.browserChecker = browserChecker
+        self.windowChecker = windowChecker
+    }
+
+    func availability(for hook: Hook) async -> HookRuntimeTargetAvailability {
+        switch hook.target {
+        case let .window(window):
+            do {
+                switch try await windowChecker.availability(of: window) {
+                case .available, .minimized:
+                    // Delay Hook 的窗口最小化不妨碍稍后通知；用户点击通知时再恢复应用。
+                    return .available
+                case .unavailable:
+                    return .targetUnavailable
+                }
+            } catch ScreenCaptureError.capturePermissionMissing {
+                return .blocked(.capturePermissionMissing)
+            } catch {
+                // 系统窗口列表暂时失败时不能猜测为已关闭，也不能继续发送可能失去目标的通知。
+                return .retryLater
+            }
+        case let .browser(browser):
+            guard browser.browserBundleIdentifier != "com.apple.Safari" else {
+                // Safari 不属于当前 Chromium 验收范围；保留既有行为，避免本轮改变其产品状态。
+                return .available
+            }
+            do {
+                return try await browserChecker.targetIsAvailable(hookID: hook.id, target: browser)
+                    ? .available
+                    : .targetUnavailable
+            } catch {
+                return .blocked(.browserExtensionDisconnected)
+            }
+        }
+    }
+}
+
 /// 采集当前前台窗口和有限输入活动摘要，供全部已满足 Hook 共享一次判断。
 struct AppActiveEvidenceProvider: HookRuntimeActiveEvidenceProvider {
     let privacyExclusionStore: AppPrivacyExclusionStore

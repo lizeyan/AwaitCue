@@ -10,7 +10,9 @@ public actor HookRuntime {
     private let decisionProvider: any HookRuntimeDecisionProvider
     private let effectExecutor: any HookRuntimeEffectExecutor
     private let clock: any HookRuntimeClock
+    private let targetAvailabilityProvider: any HookRuntimeTargetAvailabilityProvider
     private var interruptibilityRetryTask: Task<Void, any Error>?
+    private var interruptibilityRetryDeadline: Date?
     private var conditionRetryTasks: [HookID: Task<Void, Never>] = [:]
     private var interruptibilityGeneration: UInt64 = 0
     private var conditionGenerations: [HookID: UInt64] = [:]
@@ -23,7 +25,8 @@ public actor HookRuntime {
         activeEvidenceProvider: any HookRuntimeActiveEvidenceProvider,
         decisionProvider: any HookRuntimeDecisionProvider,
         effectExecutor: any HookRuntimeEffectExecutor,
-        clock: any HookRuntimeClock
+        clock: any HookRuntimeClock,
+        targetAvailabilityProvider: any HookRuntimeTargetAvailabilityProvider = AlwaysAvailableTargetAvailabilityProvider()
     ) {
         self.coordinator = coordinator
         self.conditionEvidenceProvider = conditionEvidenceProvider
@@ -31,6 +34,7 @@ public actor HookRuntime {
         self.decisionProvider = decisionProvider
         self.effectExecutor = effectExecutor
         self.clock = clock
+        self.targetAvailabilityProvider = targetAvailabilityProvider
     }
 
     /// 采集一个 Condition Hook 的当前证据，并把类型化判断交给 Core 生命周期。
@@ -131,6 +135,15 @@ public actor HookRuntime {
     public func advanceMinimumWaits() async throws {
         guard !isStopped else { return }
         let now = await clock.now()
+        let advancedAnyHook = try await advanceDueMinimumWaits(at: now)
+        if advancedAnyHook {
+            // Target 暂不可用时 helper 可能已经安排共享重试；这里不能用公开入口取消它。
+            try await evaluateInterruptibilityWithoutCancellingRetry()
+        }
+    }
+
+    /// 只推进已经到时且 Target 可用的 Hook；模型判断由调用方统一合并，避免每个 Hook 单独请求。
+    private func advanceDueMinimumWaits(at now: Date) async throws -> Bool {
         let dueHooks = try await coordinator.restoreActiveHooks().filter { hook in
             guard hook.state == .waitingMinimum,
                   let earliestAttentionAt = hook.earliestAttentionAt
@@ -140,12 +153,12 @@ public actor HookRuntime {
             return earliestAttentionAt <= now
         }
 
-        for hook in dueHooks {
+        var advancedAnyHook = false
+        for hook in dueHooks where try await targetIsAvailable(hook, at: now) {
             _ = try await coordinator.apply(.timeAdvanced(to: now), to: hook.id)
+            advancedAnyHook = true
         }
-        if !dueHooks.isEmpty {
-            try await evaluateInterruptibility()
-        }
+        return advancedAnyHook
     }
 
     /// 用户会话重新活跃时，直接交付睡眠前已满足或睡眠期间已到时的 Hook。
@@ -171,6 +184,7 @@ public actor HookRuntime {
 
         for hook in eligibleHooks {
             guard generation == interruptibilityGeneration, !isStopped else { return }
+            guard try await targetIsAvailable(hook, at: activeAt) else { continue }
             try await clearRecoveredBlockIfNeeded(on: hook, at: activeAt)
             guard generation == interruptibilityGeneration, !isStopped else { return }
             let transition = try await coordinator.apply(
@@ -235,7 +249,7 @@ public actor HookRuntime {
     private func evaluateInterruptibilityWithoutCancellingRetry() async throws {
         interruptibilityGeneration &+= 1
         let generation = interruptibilityGeneration
-        let hooks = try await waitingInterruptibilityHooks()
+        let hooks = try await availableWaitingInterruptibilityHooks()
         guard !hooks.isEmpty else { return }
 
         // evidence 只作为当前栈上的短生命周期值传给模型，绝不写入 Hook 或 Repository。
@@ -318,8 +332,9 @@ public actor HookRuntime {
         }
     }
 
-    private func waitingInterruptibilityHooks() async throws -> [Hook] {
-        try await coordinator.restoreActiveHooks()
+    private func availableWaitingInterruptibilityHooks() async throws -> [Hook] {
+        let now = await clock.now()
+        let hooks = try await coordinator.restoreActiveHooks()
             .filter { $0.state == .waitingInterruptible }
             .sorted {
                 if $0.createdAt == $1.createdAt {
@@ -327,6 +342,29 @@ public actor HookRuntime {
                 }
                 return $0.createdAt < $1.createdAt
             }
+        var available: [Hook] = []
+        for hook in hooks where try await targetIsAvailable(hook, at: now) {
+            available.append(hook)
+        }
+        return available
+    }
+
+    /// Target 身份检查只产生领域状态，不让 Runtime 了解窗口发现或浏览器协议细节。
+    private func targetIsAvailable(_ hook: Hook, at occurredAt: Date) async throws -> Bool {
+        switch await targetAvailabilityProvider.availability(for: hook) {
+        case .available:
+            return true
+        case .targetUnavailable:
+            _ = try await coordinator.apply(.targetBecameUnavailable(at: occurredAt), to: hook.id)
+            return false
+        case let .blocked(reason):
+            _ = try await coordinator.apply(.blocked(reason, at: occurredAt), to: hook.id)
+            scheduleInterruptibilityRetry(at: occurredAt.addingTimeInterval(30))
+            return false
+        case .retryLater:
+            scheduleInterruptibilityRetry(at: occurredAt.addingTimeInterval(30))
+            return false
+        }
     }
 
     private func applyEvidenceFailure(
@@ -450,8 +488,16 @@ public actor HookRuntime {
     }
 
     private func scheduleInterruptibilityRetry(at deadline: Date) {
+        if let scheduledDeadline = interruptibilityRetryDeadline,
+           scheduledDeadline <= deadline
+        {
+            // 同一轮多个 Hook 可能要求相同重试；保留更早的共享任务，避免取消 continuation
+            // 与新 sleep 注册竞态，导致唯一一次重试被当作旧任务吞掉。
+            return
+        }
         cancelScheduledRetry()
         let retryClock = clock
+        interruptibilityRetryDeadline = deadline
         // 只保留一个共享任务，避免每个 Hook 分别截图和请求模型；外部活动变化会取消它并立即重判。
         interruptibilityRetryTask = Task { [weak self, retryClock] in
             try await retryClock.sleep(until: deadline)
@@ -463,12 +509,16 @@ public actor HookRuntime {
 
     private func performScheduledInterruptibilityRetry() async throws {
         interruptibilityRetryTask = nil
+        interruptibilityRetryDeadline = nil
+        // Minimum Wait Hook 可能因 Target 暂不可用而从未进入 waitingInterruptible；共享重试必须先重新推进它们。
+        _ = try await advanceDueMinimumWaits(at: await clock.now())
         try await evaluateInterruptibilityWithoutCancellingRetry()
     }
 
     private func cancelScheduledRetry() {
         interruptibilityRetryTask?.cancel()
         interruptibilityRetryTask = nil
+        interruptibilityRetryDeadline = nil
     }
 
     private func scheduleConditionRetry(for hookID: HookID, at deadline: Date) {

@@ -10,6 +10,30 @@ import AwaitCueSelection
 import CoreGraphics
 import Foundation
 
+/// Browser 页面观察的最小操作 seam；生产环境转发给 relay，配置链路测试使用记录 adapter。
+struct BrowserBindingOperations: Sendable {
+    let bind: @Sendable (HookID, BrowserTarget) async throws -> Void
+    let unbind: @Sendable (HookID, BrowserTarget) async throws -> Void
+    let focus: @Sendable (HookID, BrowserTarget) async throws -> Void
+
+    init(
+        bind: @escaping @Sendable (HookID, BrowserTarget) async throws -> Void,
+        unbind: @escaping @Sendable (HookID, BrowserTarget) async throws -> Void,
+        focus: @escaping @Sendable (HookID, BrowserTarget) async throws -> Void = { _, _ in }
+    ) {
+        self.bind = bind
+        self.unbind = unbind
+        self.focus = focus
+    }
+}
+
+/// 真实 live E2E 使用的本机模型端点；只允许显式测试进程连接 loopback。
+struct ApplicationE2EModelConfiguration: Equatable, Sendable {
+    let baseURL: String
+    let apiKey: String
+    let model: String
+}
+
 /// 菜单栏界面的单一展示状态，并负责把系统副作用接到 Core 生命周期结果。
 @MainActor
 final class AwaitCueApplicationModel: ObservableObject {
@@ -41,19 +65,25 @@ final class AwaitCueApplicationModel: ObservableObject {
     @Published private(set) var setupActionError: String?
     @Published var pendingTarget: HookTarget?
     @Published private(set) var isSelectingTarget = false
-    @Published private(set) var screenCapturePermissionGranted = CGPreflightScreenCaptureAccess()
+    @Published private(set) var screenCapturePermissionGranted: Bool
     @Published private(set) var conditionPreview: PreparedCondition?
     @Published private(set) var isPreparingCondition = false
     @Published private(set) var conditionPreparationError: String?
 
     private var coordinator: HookCoordinator?
-    private let notificationClient = SystemNotificationClient()
+    private let notificationClient: SystemNotificationClient
     private let bridgeServer: NativeBridgeServer
     private let browserSelectionRelay: NativeBrowserSelectionRelay
     private let safariExtensionDispatcher: SafariExtensionCommandDispatcher
     private let selectionController: GlobalSelectionController
     private let privacyExclusionStore: AppPrivacyExclusionStore
-    private let keychainStore = KeychainSecretStore(service: "org.awaitcue.model")
+    private let secretStore: any AwaitCueModelSecretStore
+    private let defaults: UserDefaults
+    private let e2eModelConfiguration: ApplicationE2EModelConfiguration?
+    private let modelClientFactory: AwaitCueModelClientFactory
+    private let browserBindingOperations: BrowserBindingOperations
+    private let screenCapturePermission: any ScreenCapturePermissionProviding
+    private let globalHotKeyFactory: GlobalHotKeyFactory
     private let hookCreationPresentationCoordinator = HookCreationPresentationCoordinator()
     private let apiKeyAccount = "default-responses-api-key"
     private var hasStarted = false
@@ -62,20 +92,46 @@ final class AwaitCueApplicationModel: ObservableObject {
     private var browserTargetTask: Task<Void, Never>?
     private var runtimeLoopTask: Task<Void, Never>?
     private var runtime: HookRuntime?
-    private var globalHotKeyController: GlobalHotKeyController?
+    private var globalHotKeyController: (any GlobalHotKeyControlling)?
     private var sessionActivityObserver: NSObjectProtocol?
     private var applicationActivationObserver: NSObjectProtocol?
     private var notificationActionTask: Task<Void, Never>?
     private var pendingInitialEvidence: ModelEvidence?
 
-    init() {
-        let defaults = UserDefaults.standard
-        let storedModelBaseURL = defaults.string(forKey: "modelBaseURL")
+    init(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        defaults: UserDefaults = .standard,
+        notificationClient: SystemNotificationClient? = nil,
+        secretStore: (any AwaitCueModelSecretStore)? = nil,
+        screenCapturePermission: (any ScreenCapturePermissionProviding)? = nil,
+        globalHotKeyFactory: @escaping GlobalHotKeyFactory = {
+            try GlobalHotKeyController(preset: $0, action: $1)
+        },
+        modelClientFactory: @escaping AwaitCueModelClientFactory = {
+            OpenAIResponsesClient(baseURL: $0, apiKey: $1, model: $2)
+        },
+        browserBindingOperations: BrowserBindingOperations? = nil
+    ) {
+        self.notificationClient = notificationClient ?? SystemNotificationClient()
+        self.secretStore = secretStore ?? KeychainSecretStore(service: "org.awaitcue.model")
+        self.defaults = defaults
+        let e2eModelConfiguration = Self.e2eModelConfiguration(environment: environment)
+        self.e2eModelConfiguration = e2eModelConfiguration
+        self.modelClientFactory = modelClientFactory
+        self.screenCapturePermission = screenCapturePermission
+            ?? SystemScreenCapturePermissionProvider()
+        self.globalHotKeyFactory = globalHotKeyFactory
+        screenCapturePermissionGranted = self.screenCapturePermission.preflight()
+        let storedModelBaseURL = e2eModelConfiguration?.baseURL
+            ?? defaults.string(forKey: "modelBaseURL")
             ?? "https://api.openai.com/v1"
         modelBaseURL = storedModelBaseURL
-        modelName = defaults.string(forKey: "modelName") ?? "gpt-6-luna"
-        confirmedAPIHostname = defaults.string(forKey: Self.confirmedAPIHostnameKey)
-            == URL(string: storedModelBaseURL)?.host
+        modelName = e2eModelConfiguration?.model
+            ?? defaults.string(forKey: "modelName")
+            ?? "gpt-6-luna"
+        confirmedAPIHostname = e2eModelConfiguration != nil
+            || defaults.string(forKey: Self.confirmedAPIHostnameKey)
+                == URL(string: storedModelBaseURL)?.host
         globalShortcutPreset = defaults.string(forKey: Self.globalShortcutPresetKey)
             .flatMap(GlobalShortcutPreset.init(rawValue:))
             ?? .default
@@ -99,16 +155,39 @@ final class AwaitCueApplicationModel: ObservableObject {
         )
         self.bridgeServer = bridgeServer
         self.browserSelectionRelay = browserSelectionRelay
+        self.browserBindingOperations = browserBindingOperations ?? BrowserBindingOperations(
+            bind: { hookID, target in
+                try await browserSelectionRelay.bind(hookID: hookID, target: target)
+            },
+            unbind: { hookID, target in
+                try await browserSelectionRelay.unbind(hookID: hookID, target: target)
+            },
+            focus: { hookID, target in
+                try await browserSelectionRelay.focus(hookID: hookID, target: target)
+            }
+        )
         self.safariExtensionDispatcher = safariExtensionDispatcher
         selectionController = GlobalSelectionController(browserRelay: browserSelectionRelay)
 
         do {
             let directory = try Self.applicationSupportDirectory()
-            let repository = try SQLiteHookRepository(databaseURL: directory.appendingPathComponent("awaitcue.sqlite3"))
+            let databaseURL = Self.hookDatabaseURL(
+                environment: environment,
+                defaultDirectory: directory
+            )
+            try FileManager.default.createDirectory(
+                at: databaseURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let repository = try SQLiteHookRepository(databaseURL: databaseURL)
             coordinator = HookCoordinator(repository: repository)
-            apiKey = Self.shouldAccessKeychain(
-                environment: ProcessInfo.processInfo.environment
-            ) ? try keychainStore.load(account: apiKeyAccount) ?? "" : ""
+            if let e2eModelConfiguration {
+                apiKey = e2eModelConfiguration.apiKey
+            } else {
+                apiKey = Self.shouldAccessKeychain(
+                    environment: environment
+                ) ? try self.secretStore.load(account: apiKeyAccount) ?? "" : ""
+            }
             modelStatus = apiKey.isEmpty || !confirmedAPIHostname ? .notConfigured : .connected
         } catch {
             coordinator = nil
@@ -131,6 +210,34 @@ final class AwaitCueApplicationModel: ObservableObject {
     /// 只有本机 live E2E 的显式环境标记可以隔离 Keychain；普通和发布启动始终读取真实密钥。
     nonisolated static func shouldAccessKeychain(environment: [String: String]) -> Bool {
         environment["AWAITCUE_E2E_SKIP_KEYCHAIN"] != "1"
+    }
+
+    /// 只接受带双重 E2E 标记的 loopback 配置，避免测试变量把屏幕内容发到外部服务。
+    nonisolated static func e2eModelConfiguration(
+        environment: [String: String]
+    ) -> ApplicationE2EModelConfiguration? {
+        guard environment["AWAITCUE_E2E"] == "1",
+              environment["AWAITCUE_E2E_SKIP_KEYCHAIN"] == "1",
+              let baseURL = environment["AWAITCUE_E2E_MODEL_BASE_URL"],
+              let url = URL(string: baseURL),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = url.host?.lowercased(),
+              ["127.0.0.1", "localhost", "::1"].contains(host),
+              let apiKey = environment["AWAITCUE_E2E_MODEL_API_KEY"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !apiKey.isEmpty,
+              let model = environment["AWAITCUE_E2E_MODEL"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !model.isEmpty
+        else {
+            return nil
+        }
+        return ApplicationE2EModelConfiguration(
+            baseURL: baseURL,
+            apiKey: apiKey,
+            model: model
+        )
     }
 
     func isBrowserInstalled(_ family: BrowserExtensionFamily) -> Bool {
@@ -240,9 +347,11 @@ final class AwaitCueApplicationModel: ObservableObject {
                     }
                 }
             }
+            // 先建立 evidence consumer，再恢复页面绑定；静态页 bind 立即返回的首份 DOM
+            // 不能在 Runtime 尚未就绪时被丢弃。
+            await configureRuntimeIfPossible()
             try await restoreBrowserBindings()
             await refreshSafariExtensionStatus()
-            await configureRuntimeIfPossible()
             configureGlobalHotKey()
             startWorkspaceEventMonitoring()
             // 通知授权可能等待用户操作；不能让它阻塞 SQLite、relay、快捷键和观察 Runtime 启动。
@@ -262,7 +371,7 @@ final class AwaitCueApplicationModel: ObservableObject {
         }
         modelStatus = .testing
         do {
-            let client = OpenAIResponsesClient(baseURL: url, apiKey: apiKey, model: modelName)
+            let client = modelClientFactory(url, apiKey, modelName)
             let imageData = Data(base64Encoded: Self.connectionTestPNG) ?? Data()
             _ = try await client.prepareCondition(
                 ConditionPreparationRequest(
@@ -273,12 +382,13 @@ final class AwaitCueApplicationModel: ObservableObject {
                     )
                 )
             )
-            try keychainStore.save(apiKey, account: apiKeyAccount)
-            UserDefaults.standard.set(modelBaseURL, forKey: "modelBaseURL")
-            UserDefaults.standard.set(modelName, forKey: "modelName")
-            UserDefaults.standard.set(url.host, forKey: Self.confirmedAPIHostnameKey)
+            try secretStore.save(apiKey, account: apiKeyAccount)
+            defaults.set(modelBaseURL, forKey: "modelBaseURL")
+            defaults.set(modelName, forKey: "modelName")
+            defaults.set(url.host, forKey: Self.confirmedAPIHostnameKey)
             modelStatus = .connected
             await configureRuntimeIfPossible()
+            try await restoreBrowserBindings()
         } catch {
             modelStatus = .failed(Self.userFacingMessage(for: error))
         }
@@ -286,19 +396,31 @@ final class AwaitCueApplicationModel: ObservableObject {
 
     /// 删除模型配置，但保留 Hook；依赖模型的 Hook 会在运行时显示阻塞。
     func deleteModelConfiguration() async {
+        await stopRuntimeObservation()
         do {
-            await runtime?.stop()
-            try keychainStore.delete(account: apiKeyAccount)
+            let activeHooks = try await coordinator?.restoreActiveHooks() ?? []
+            _ = try await coordinator?.blockActiveHooks(
+                reason: .modelUnavailable,
+                at: .now
+            )
+            for hook in activeHooks {
+                guard case let .browser(browser) = hook.target else { continue }
+                try? await browserBindingOperations.unbind(hook.id, browser)
+            }
+            let updatedHooks = try await coordinator?.restoreActiveHooks() ?? []
+            // Hook 状态已经安全落盘后才删除密钥，数据库故障不会留下半删除配置。
+            try secretStore.delete(account: apiKeyAccount)
+            hooks = updatedHooks
             apiKey = ""
             modelStatus = .notConfigured
-            runtimeLoopTask?.cancel()
-            browserEvidenceTask?.cancel()
-            runtime = nil
             confirmedAPIHostname = false
-            UserDefaults.standard.removeObject(forKey: "modelBaseURL")
-            UserDefaults.standard.removeObject(forKey: "modelName")
-            UserDefaults.standard.removeObject(forKey: Self.confirmedAPIHostnameKey)
+            defaults.removeObject(forKey: "modelBaseURL")
+            defaults.removeObject(forKey: "modelName")
+            defaults.removeObject(forKey: Self.confirmedAPIHostnameKey)
         } catch {
+            // 密钥和 Defaults 尚在时恢复原 Runtime 与页面观察，删除失败不会让配置静默失效。
+            await configureRuntimeIfPossible()
+            try? await restoreBrowserBindings()
             modelStatus = .failed(Self.userFacingMessage(for: error))
         }
     }
@@ -314,20 +436,14 @@ final class AwaitCueApplicationModel: ObservableObject {
         if case let .browser(browser) = hook.target,
            !hooks.contains(where: { $0.id == hook.id })
         {
-            try? await browserSelectionRelay.unbind(
-                hookID: hook.id,
-                target: browser
-            )
+            try? await browserBindingOperations.unbind(hook.id, browser)
         }
     }
 
     /// 取消一个未完成 Hook。
     func cancel(_ hook: Hook) async {
         if case let .browser(browser) = hook.target {
-            try? await browserSelectionRelay.unbind(
-                hookID: hook.id,
-                target: browser
-            )
+            try? await browserBindingOperations.unbind(hook.id, browser)
         }
         await apply(.cancelled(at: .now), to: hook)
     }
@@ -445,10 +561,7 @@ final class AwaitCueApplicationModel: ObservableObject {
             try await coordinator.add(hook)
             if case let .browser(browserTarget) = target {
                 do {
-                    try await browserSelectionRelay.bind(
-                        hookID: hook.id,
-                        target: browserTarget
-                    )
+                    try await browserBindingOperations.bind(hook.id, browserTarget)
                 } catch {
                     // 创建对用户是一个整体操作；bind 失败时必须把已经落盘的 Hook 一并回滚。
                     try await coordinator.delete(id: hook.id)
@@ -490,8 +603,8 @@ final class AwaitCueApplicationModel: ObservableObject {
     /// 仅在用户主动新建 Hook 或设置页点击时请求屏幕录制权限。
     @discardableResult
     func requestScreenCapturePermission() -> Bool {
-        let granted = CGRequestScreenCaptureAccess()
-        screenCapturePermissionGranted = granted || CGPreflightScreenCaptureAccess()
+        let granted = screenCapturePermission.request()
+        screenCapturePermissionGranted = granted || screenCapturePermission.preflight()
         return screenCapturePermissionGranted
     }
 
@@ -500,14 +613,11 @@ final class AwaitCueApplicationModel: ObservableObject {
         do {
             for hook in hooks {
                 if case let .browser(browser) = hook.target {
-                    try? await browserSelectionRelay.unbind(
-                        hookID: hook.id,
-                        target: browser
-                    )
+                    try? await browserBindingOperations.unbind(hook.id, browser)
                 }
             }
             try await coordinator?.deleteAll()
-            try keychainStore.delete(account: apiKeyAccount)
+            try secretStore.delete(account: apiKeyAccount)
             hooks = []
             apiKey = ""
             modelBaseURL = "https://api.openai.com/v1"
@@ -517,13 +627,13 @@ final class AwaitCueApplicationModel: ObservableObject {
             finishPendingTarget()
             excludedApplicationBundleIdentifiersText = ""
             excludedBrowserHostsText = ""
-            UserDefaults.standard.removeObject(
+            defaults.removeObject(
                 forKey: Self.excludedApplicationBundleIdentifiersKey
             )
-            UserDefaults.standard.removeObject(forKey: Self.excludedBrowserHostsKey)
-            UserDefaults.standard.removeObject(forKey: "modelBaseURL")
-            UserDefaults.standard.removeObject(forKey: "modelName")
-            UserDefaults.standard.removeObject(forKey: Self.confirmedAPIHostnameKey)
+            defaults.removeObject(forKey: Self.excludedBrowserHostsKey)
+            defaults.removeObject(forKey: "modelBaseURL")
+            defaults.removeObject(forKey: "modelName")
+            defaults.removeObject(forKey: Self.confirmedAPIHostnameKey)
             resetGlobalShortcut()
             notificationClient.removeAllPendingNotifications()
             await runtime?.stop()
@@ -545,7 +655,7 @@ final class AwaitCueApplicationModel: ObservableObject {
             globalHotKeyController = try makeGlobalHotKeyController(for: preset)
             globalShortcutPreset = preset
             globalShortcutError = nil
-            UserDefaults.standard.set(preset.rawValue, forKey: Self.globalShortcutPresetKey)
+            defaults.set(preset.rawValue, forKey: Self.globalShortcutPresetKey)
         } catch {
             globalShortcutError = "无法注册 \(preset.displayName)，已恢复 \(previousPreset.displayName)。"
             globalHotKeyController = try? makeGlobalHotKeyController(for: previousPreset)
@@ -583,7 +693,8 @@ final class AwaitCueApplicationModel: ObservableObject {
         }
     }
 
-    private func handleNotificationAction(_ action: SystemNotificationAction) async {
+    /// 把通知按钮动作交给同一 Hook 生命周期；测试通过系统 action 映射后验证最终行为。
+    func handleNotificationAction(_ action: SystemNotificationAction) async {
         do {
             let hookID: HookID = switch action {
             case let .open(id), let .snooze(id), let .complete(id): id
@@ -613,7 +724,7 @@ final class AwaitCueApplicationModel: ObservableObject {
                 withBundleIdentifier: window.applicationBundleIdentifier
             ).first?.activate(options: [.activateAllWindows])
         case let .browser(browser):
-            try await browserSelectionRelay.focus(hookID: hook.id, target: browser)
+            try await browserBindingOperations.focus(hook.id, browser)
         }
     }
 
@@ -627,6 +738,23 @@ final class AwaitCueApplicationModel: ObservableObject {
         let directory = base.appendingPathComponent("AwaitCue", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    /// 真实 live E2E 必须隔离 Hook 数据，但 native relay descriptor 仍保留产品默认路径供 Chrome 读取。
+    /// 只有显式 `AWAITCUE_E2E=1` 时才接受测试目录，避免普通启动被环境变量意外改写。
+    nonisolated static func hookDatabaseURL(
+        environment: [String: String],
+        defaultDirectory: URL
+    ) -> URL {
+        if environment["AWAITCUE_E2E"] == "1",
+           let path = environment["AWAITCUE_E2E_DATA_DIRECTORY"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !path.isEmpty
+        {
+            return URL(fileURLWithPath: path, isDirectory: true)
+                .appendingPathComponent("awaitcue.sqlite3")
+        }
+        return defaultDirectory.appendingPathComponent("awaitcue.sqlite3")
     }
 
     private static func nativeBridgeDescriptorURL() throws -> URL {
@@ -647,11 +775,11 @@ final class AwaitCueApplicationModel: ObservableObject {
 
     /// 保存用户可编辑的排除清单，并让已经运行的 provider 在下一次截图前立即读取新规则。
     private func persistPrivacyExclusionConfiguration() {
-        UserDefaults.standard.set(
+        defaults.set(
             excludedApplicationBundleIdentifiersText,
             forKey: Self.excludedApplicationBundleIdentifiersKey
         )
-        UserDefaults.standard.set(
+        defaults.set(
             excludedBrowserHostsText,
             forKey: Self.excludedBrowserHostsKey
         )
@@ -677,16 +805,16 @@ final class AwaitCueApplicationModel: ObservableObject {
         text.components(separatedBy: CharacterSet(charactersIn: ",\n"))
     }
 
-    private func configuredModelClient() throws -> OpenAIResponsesClient {
+    private func configuredModelClient() throws -> any AwaitCueModelClient {
         guard confirmedAPIHostname,
               let url = URL(string: modelBaseURL),
-              url.host == UserDefaults.standard.string(forKey: Self.confirmedAPIHostnameKey),
+              isAPIHostnameConfirmed(for: url),
               !apiKey.isEmpty,
               !modelName.isEmpty
         else {
             throw OpenAIResponsesClientError.invalidConfiguration
         }
-        return OpenAIResponsesClient(baseURL: url, apiKey: apiKey, model: modelName)
+        return modelClientFactory(url, apiKey, modelName)
     }
 
     private func configureRuntimeIfPossible() async {
@@ -701,14 +829,14 @@ final class AwaitCueApplicationModel: ObservableObject {
         guard let coordinator,
               confirmedAPIHostname,
               let url = URL(string: modelBaseURL),
-              url.host == UserDefaults.standard.string(forKey: Self.confirmedAPIHostnameKey),
+              isAPIHostnameConfirmed(for: url),
               !apiKey.isEmpty,
               !modelName.isEmpty
         else {
             runtime = nil
             return
         }
-        let client = OpenAIResponsesClient(baseURL: url, apiKey: apiKey, model: modelName)
+        let client = modelClientFactory(url, apiKey, modelName)
         let runtime = HookRuntime(
             coordinator: coordinator,
             conditionEvidenceProvider: AppConditionEvidenceProvider(browserRelay: browserSelectionRelay),
@@ -721,7 +849,10 @@ final class AwaitCueApplicationModel: ObservableObject {
                 notificationClient: notificationClient,
                 browserRelay: browserSelectionRelay
             ),
-            clock: SystemHookRuntimeClock()
+            clock: SystemHookRuntimeClock(),
+            targetAvailabilityProvider: AppTargetAvailabilityProvider(
+                browserRelay: browserSelectionRelay
+            )
         )
         self.runtime = runtime
         Task { [weak self, runtime] in
@@ -758,8 +889,21 @@ final class AwaitCueApplicationModel: ObservableObject {
         }
     }
 
+    /// 停止全部模型任务并等待 Runtime generation 失效；浏览器解绑由调用方在持久化成功后执行。
+    private func stopRuntimeObservation() async {
+        let previousRuntime = runtime
+        runtimeLoopTask?.cancel()
+        browserEvidenceTask?.cancel()
+        browserTargetTask?.cancel()
+        runtimeLoopTask = nil
+        browserEvidenceTask = nil
+        browserTargetTask = nil
+        runtime = nil
+        await previousRuntime?.stop()
+    }
+
     private func restoreBrowserBindings() async throws {
-        guard let coordinator else { return }
+        guard modelStatus == .connected, let coordinator else { return }
         for hook in try await coordinator.restoreActiveHooks() {
             guard hook.state == .observing,
                   case let .browser(target) = hook.target,
@@ -768,17 +912,20 @@ final class AwaitCueApplicationModel: ObservableObject {
                 continue
             }
             do {
-                try await browserSelectionRelay.bind(
-                    hookID: hook.id,
-                    target: target
+                try await browserBindingOperations.bind(hook.id, target)
+                _ = try await coordinator.unblockHook(
+                    id: hook.id,
+                    onlyIf: .browserExtensionDisconnected,
+                    at: .now
                 )
-                _ = try? await coordinator.apply(.unblocked(at: .now), to: hook.id)
             } catch {
                 // 一个浏览器或 Profile 不可用不能阻断其他 Hook 的恢复。
-                _ = try? await coordinator.apply(
-                    .blocked(.browserExtensionDisconnected, at: .now),
-                    to: hook.id
-                )
+                if hook.blockReason == nil || hook.blockReason == .browserExtensionDisconnected {
+                    _ = try? await coordinator.apply(
+                        .blocked(.browserExtensionDisconnected, at: .now),
+                        to: hook.id
+                    )
+                }
             }
         }
     }
@@ -802,16 +949,26 @@ final class AwaitCueApplicationModel: ObservableObject {
 
     private func makeGlobalHotKeyController(
         for preset: GlobalShortcutPreset
-    ) throws -> GlobalHotKeyController {
-        try GlobalHotKeyController(preset: preset) { [weak self] in
+    ) throws -> any GlobalHotKeyControlling {
+        try globalHotKeyFactory(preset) { [weak self] in
             Task { await self?.beginNewHookSelection() }
         }
+    }
+
+    private func isAPIHostnameConfirmed(for url: URL) -> Bool {
+        if let e2eModelConfiguration,
+           e2eModelConfiguration.baseURL == modelBaseURL,
+           URL(string: e2eModelConfiguration.baseURL)?.host == url.host
+        {
+            return true
+        }
+        return url.host == defaults.string(forKey: Self.confirmedAPIHostnameKey)
     }
 
     private func resetGlobalShortcut() {
         globalHotKeyController?.stop()
         globalShortcutPreset = .default
-        UserDefaults.standard.removeObject(forKey: Self.globalShortcutPresetKey)
+        defaults.removeObject(forKey: Self.globalShortcutPresetKey)
         configureGlobalHotKey()
     }
 
