@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AwaitCue Chrome E2E Target</title>
+  <style>
+    body { margin: 48px; font: 18px system-ui; background: #f7f7f7; color: #202124; }
+    main { max-width: 760px; padding: 32px; background: white; border-radius: 16px; }
+    #deployment-status { margin-top: 24px; padding: 24px; border: 2px solid #1a73e8; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>AwaitCue 本机 Chrome 端到端目标</h1>
+    <p>此页面只服务于本机自动化验证，不依赖公网。</p>
+    <section
+      id="deployment-status"
+      role="status"
+      aria-label="部署状态：运行中"
+      data-state="running"
+      data-status="running"
+    >
+      <strong>CN 全流量部署</strong>
+      <span id="status-text">AWAITCUE_E2E_STATUS_PENDING</span>
+    </section>
+  </main>
+  <script>
+    window.awaitCueMarkComplete = () => {
+      const status = document.querySelector("#deployment-status");
+      status.dataset.state = "complete";
+      status.dataset.status = "success";
+      status.setAttribute("aria-label", "部署状态：完成");
+      status.querySelector("#status-text").textContent = "AWAITCUE_E2E_STATUS_COMPLETE";
+    };
+  </script>
+</body>
+</html>

@@ -50,12 +50,9 @@ struct FileDescriptorChunkReaderTests {
     }
 
     @Test("无效文件描述符保留 POSIX 读取错误")
-    func throwsForClosedDescriptor() {
-        var descriptors = [Int32](repeating: -1, count: 2)
-        #expect(pipe(&descriptors) == 0)
-        let reader = FileDescriptorChunkReader(fileDescriptor: descriptors[0])
-        Darwin.close(descriptors[0])
-        Darwin.close(descriptors[1])
+    func throwsForInvalidDescriptor() {
+        // “关闭后数字 FD 不会立刻复用”不是 POSIX 保证；并行测试必须使用稳定无效的 -1。
+        let reader = FileDescriptorChunkReader(fileDescriptor: -1)
 
         do {
             _ = try reader.readChunk(maximumCount: 64)
@@ -86,17 +83,14 @@ struct FileDescriptorChunkWriterTests {
         Darwin.close(descriptors[1])
     }
 
-    @Test("关闭的写端保留 POSIX 错误")
-    func closedDescriptorThrows() {
-        var descriptors = [Int32](repeating: -1, count: 2)
-        #expect(pipe(&descriptors) == 0)
-        let writer = FileDescriptorChunkWriter(fileDescriptor: descriptors[1])
-        Darwin.close(descriptors[0])
-        Darwin.close(descriptors[1])
+    @Test("无效写端保留 POSIX 错误")
+    func invalidDescriptorThrows() {
+        // 固定无效值不会被其他并发测试重新分配，仍直接验证 writer 暴露 EBADF 的契约。
+        let writer = FileDescriptorChunkWriter(fileDescriptor: -1)
 
         do {
             try writer.write(Data([1]))
-            Issue.record("关闭的文件描述符不应写入成功")
+            Issue.record("无效文件描述符不应写入成功")
         } catch let error as NSError {
             #expect(error.domain == NSPOSIXErrorDomain)
             #expect(error.code == Int(EBADF))

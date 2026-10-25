@@ -5,6 +5,8 @@ set -euo pipefail
 bash -n Scripts/*.sh
 swift build -Xswiftc -warnings-as-errors
 ./Scripts/run-macos-e2e.sh
+./Scripts/test-chrome-e2e-fixture.sh
+./Scripts/test-native-host-install.sh
 ./Scripts/swift-coverage.sh
 ./Scripts/extension-coverage.sh
 npm --prefix SafariExtension ci

@@ -51,6 +51,50 @@ public actor HookCoordinator {
         return transition
     }
 
+    /// 对当前仍需运行的全部 Hook 原子应用同一个阻塞原因；终态历史保持不变。
+    @discardableResult
+    public func blockActiveHooks(
+        reason: HookBlockReason,
+        at occurredAt: Date
+    ) async throws -> [Hook] {
+        await acquireRepositoryAccess()
+        defer { releaseRepositoryAccess() }
+        let active = try await repository.loadHooks().filter {
+            $0.state != .completed
+                && $0.state != .cancelled
+                && $0.state != .notified
+                && $0.state != .deliveringNotification
+        }
+        var blocked: [Hook] = []
+        for hook in active {
+            let transition = try HookLifecycle.apply(
+                .blocked(reason, at: occurredAt),
+                to: hook
+            )
+            try await repository.save(transition.hook)
+            blocked.append(transition.hook)
+        }
+        return blocked
+    }
+
+    /// 只有当前阻塞原因与调用方恢复的依赖一致时才解除，避免一次浏览器重连清掉模型或权限故障。
+    @discardableResult
+    public func unblockHook(
+        id: HookID,
+        onlyIf expectedReason: HookBlockReason,
+        at occurredAt: Date
+    ) async throws -> Hook {
+        await acquireRepositoryAccess()
+        defer { releaseRepositoryAccess() }
+        guard let hook = try await repository.loadHooks().first(where: { $0.id == id }) else {
+            throw HookCoordinatorError.hookNotFound(id)
+        }
+        guard hook.blockReason == expectedReason else { return hook }
+        let transition = try HookLifecycle.apply(.unblocked(at: occurredAt), to: hook)
+        try await repository.save(transition.hook)
+        return transition.hook
+    }
+
     /// 永久删除一个 Hook 及其运行状态。
     public func delete(id: HookID) async throws {
         await acquireRepositoryAccess()

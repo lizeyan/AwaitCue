@@ -33,6 +33,7 @@ struct AwaitCueMenuView: View {
             Spacer()
             Text("\(model.hooks.count)")
                 .monospacedDigit()
+                .accessibilityIdentifier("awaitcue.menu.hook-count")
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(.quaternary, in: Capsule())
@@ -65,6 +66,7 @@ struct AwaitCueMenuView: View {
             HStack {
                 Text(hook.title)
                     .font(.body.weight(.medium))
+                    .accessibilityIdentifier("awaitcue.menu.hook-title")
                 Spacer()
                 Text(stateLabel(hook.state))
                     .font(.caption)
@@ -83,6 +85,7 @@ struct AwaitCueMenuView: View {
                 Spacer()
                 Button("取消", role: .destructive) { Task { await model.cancel(hook) } }
                     .buttonStyle(.borderless)
+                    .accessibilityIdentifier("awaitcue.menu.cancel-hook")
             }
             .font(.caption)
         }
@@ -96,10 +99,12 @@ struct AwaitCueMenuView: View {
                 Task { await model.beginNewHookSelection() }
             }
             .disabled(model.isSelectingTarget)
+            .accessibilityIdentifier("awaitcue.menu.new-hook")
             Spacer()
             Button("设置…", action: openSettings)
                 .accessibilityIdentifier("awaitcue.open-settings")
             Button("退出") { model.quit() }
+                .accessibilityIdentifier("awaitcue.menu.quit")
         }
     }
 

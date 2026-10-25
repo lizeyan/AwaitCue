@@ -28,6 +28,29 @@ public protocol HookRuntimeActiveEvidenceProvider: Sendable {
     func currentEvidence() async throws -> ModelEvidence
 }
 
+/// Hook 自身 Target 在进入或等待通知前的稳定可用性。
+public enum HookRuntimeTargetAvailability: Equatable, Sendable {
+    case available
+    case targetUnavailable
+    case blocked(HookBlockReason)
+    /// 系统暂时无法可靠检查 Target；保留原状态并在稍后重试，不能猜测为可用或永久关闭。
+    case retryLater
+}
+
+/// 在 Runtime 推进通知前验证原 Target；具体窗口或浏览器 tab 身份由平台 adapter 隐藏。
+public protocol HookRuntimeTargetAvailabilityProvider: Sendable {
+    func availability(for hook: Hook) async -> HookRuntimeTargetAvailability
+}
+
+/// 兼容由外部事件持续维护 Target 状态的调用方；macOS App 使用真实窗口和 tab adapter 覆盖它。
+public struct AlwaysAvailableTargetAvailabilityProvider: HookRuntimeTargetAvailabilityProvider {
+    public init() {}
+
+    public func availability(for hook: Hook) async -> HookRuntimeTargetAvailability {
+        .available
+    }
+}
+
 /// 把 Runtime 与具体 Responses API 客户端隔开的最小判断接口。
 public protocol HookRuntimeDecisionProvider: Sendable {
     func evaluateCondition(

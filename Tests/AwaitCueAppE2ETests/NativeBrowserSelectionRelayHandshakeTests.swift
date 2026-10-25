@@ -9,6 +9,55 @@ import Testing
 
 @Suite("Chromium 双向连接用户链路", .serialized)
 struct NativeBrowserSelectionRelayHandshakeTests {
+    @Test("缺少或不兼容协议版本的旧 Chrome 扩展不会被标成已连接")
+    func incompatibleChromeExtensionIsRejectedBeforeHandshake() async throws {
+        let fixture = try await RelayHandshakeFixture()
+        defer { fixture.stop() }
+
+        try await fixture.sendBrowserEvent([
+            "type": "ready",
+            "extensionInstallationID": "installation-1",
+            "browserBundleIdentifier": "com.google.Chrome",
+        ])
+
+        try await fixture.waitForStatus("浏览器扩展版本不匹配，请更新或重新加载")
+        #expect(await fixture.nextAppCommand(timeout: .milliseconds(80)) == nil)
+
+        try await fixture.sendBrowserEvent([
+            "type": "ready",
+            "protocolVersion": 99,
+            "extensionVersion": "99.0.0",
+            "extensionInstallationID": "installation-1",
+            "browserBundleIdentifier": "com.google.Chrome",
+        ])
+        #expect(await fixture.nextAppCommand(timeout: .milliseconds(80)) == nil)
+        #expect(await fixture.statuses().contains("浏览器扩展已连接") == false)
+    }
+
+    @Test("Chrome pong 缺少协商版本时不会完成握手")
+    func incompatibleChromePongIsRejected() async throws {
+        let fixture = try await RelayHandshakeFixture()
+        defer { fixture.stop() }
+        try await fixture.sendBrowserEvent([
+            "type": "ready",
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
+            "extensionInstallationID": "installation-1",
+            "browserBundleIdentifier": "com.google.Chrome",
+        ])
+        let ping = try #require(await fixture.nextAppCommand())
+
+        try await fixture.sendBrowserEvent([
+            "type": "pong",
+            "requestID": try #require(ping["requestID"] as? String),
+            "extensionInstallationID": "installation-1",
+            "browserBundleIdentifier": "com.google.Chrome",
+        ])
+
+        try await fixture.waitForStatus("浏览器扩展版本不匹配，请更新或重新加载")
+        #expect(await fixture.statuses().contains("浏览器扩展已连接") == false)
+    }
+
     @Test("只有匹配的 pong 返回后才显示扩展已连接")
     func connectedStatusRequiresMatchingPong() async throws {
         let fixture = try await RelayHandshakeFixture()
@@ -16,6 +65,8 @@ struct NativeBrowserSelectionRelayHandshakeTests {
 
         try await fixture.sendBrowserEvent([
             "type": "ready",
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "com.google.Chrome",
         ])
@@ -29,6 +80,8 @@ struct NativeBrowserSelectionRelayHandshakeTests {
         try await fixture.sendBrowserEvent([
             "type": "pong",
             "requestID": requestID,
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "company.thebrowser.Browser",
         ])
@@ -38,6 +91,8 @@ struct NativeBrowserSelectionRelayHandshakeTests {
         try await fixture.sendBrowserEvent([
             "type": "pong",
             "requestID": requestID,
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "com.google.Chrome",
         ])
@@ -53,6 +108,8 @@ struct NativeBrowserSelectionRelayHandshakeTests {
 
         try await fixture.sendBrowserEvent([
             "type": "ready",
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "com.google.Chrome",
         ])
@@ -69,6 +126,8 @@ struct NativeBrowserSelectionRelayHandshakeTests {
 
         try await fixture.sendBrowserEvent([
             "type": "ready",
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "com.google.Chrome",
         ])
@@ -79,6 +138,8 @@ struct NativeBrowserSelectionRelayHandshakeTests {
         try await fixture.sendBrowserEvent([
             "type": "pong",
             "requestID": requestID,
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "com.google.Chrome",
         ])
@@ -93,6 +154,8 @@ struct NativeBrowserSelectionRelayHandshakeTests {
 
         try await fixture.sendBrowserEvent([
             "type": "ready",
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "com.google.Chrome",
         ])
@@ -104,6 +167,8 @@ struct NativeBrowserSelectionRelayHandshakeTests {
         try await fixture.sendBrowserEvent([
             "type": "pong",
             "requestID": requestID,
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "com.google.Chrome",
         ])
@@ -125,12 +190,219 @@ struct NativeBrowserSelectionRelayHandshakeTests {
         #expect(await fixture.nextAppCommand(timeout: .milliseconds(80)) == nil)
     }
 
+    @Test("Chrome 聚焦与解绑只有收到关联 ACK 后才算成功")
+    func chromiumFocusAndUnbindWaitForAcknowledgements() async throws {
+        let fixture = try await RelayHandshakeFixture()
+        defer { fixture.stop() }
+        try await fixture.verifyConnection()
+
+        let hookID = HookID(rawValue: UUID())
+        let target = BrowserTarget(
+            browserBundleIdentifier: "com.google.Chrome",
+            nativeWindowIdentifier: 42,
+            extensionInstallationID: "installation-1",
+            tabIdentifier: 7,
+            host: "example.com",
+            initialURL: URL(string: "https://example.com")!,
+            initialTitle: "Example",
+            normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1),
+            observationMode: .dom
+        )
+
+        let focusCompletion = OperationCompletionRecorder()
+        Task {
+            let succeeded = (try? await fixture.relay.focus(hookID: hookID, target: target)) != nil
+            await focusCompletion.record(succeeded)
+        }
+        let focus = try #require(await fixture.nextAppCommand())
+        #expect(focus["type"] as? String == "focusTarget")
+        let focusRequestID = try #require(focus["requestID"] as? String)
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(await focusCompletion.value == nil)
+        try await fixture.sendBrowserEvent([
+            "type": "targetFocused",
+            "requestID": focusRequestID,
+            "extensionInstallationID": target.extensionInstallationID,
+            "browserBundleIdentifier": target.browserBundleIdentifier,
+            "hookID": hookID.rawValue.uuidString,
+            "tabID": target.tabIdentifier,
+        ])
+        #expect(try await focusCompletion.waitForValue())
+
+        let unbindCompletion = OperationCompletionRecorder()
+        Task {
+            let succeeded = (try? await fixture.relay.unbind(hookID: hookID, target: target)) != nil
+            await unbindCompletion.record(succeeded)
+        }
+        let unbind = try #require(await fixture.nextAppCommand())
+        #expect(unbind["type"] as? String == "unbindTarget")
+        let unbindRequestID = try #require(unbind["requestID"] as? String)
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(await unbindCompletion.value == nil)
+        try await fixture.sendBrowserEvent([
+            "type": "targetUnbound",
+            "requestID": unbindRequestID,
+            "extensionInstallationID": target.extensionInstallationID,
+            "browserBundleIdentifier": target.browserBundleIdentifier,
+            "hookID": hookID.rawValue.uuidString,
+        ])
+        #expect(try await unbindCompletion.waitForValue())
+    }
+
+    @Test("Chrome 目标关闭会让等待中的聚焦失败而不是静默成功")
+    func chromiumFocusFailsOnCorrelatedTargetUnavailable() async throws {
+        let fixture = try await RelayHandshakeFixture()
+        defer { fixture.stop() }
+        try await fixture.verifyConnection()
+        let hookID = HookID(rawValue: UUID())
+        let target = BrowserTarget(
+            browserBundleIdentifier: "com.google.Chrome",
+            nativeWindowIdentifier: 42,
+            extensionInstallationID: "installation-1",
+            tabIdentifier: 7,
+            host: "example.com",
+            initialURL: URL(string: "https://example.com")!,
+            initialTitle: "Example",
+            normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1),
+            observationMode: .dom
+        )
+        let completion = OperationCompletionRecorder()
+        Task {
+            let succeeded = (try? await fixture.relay.focus(hookID: hookID, target: target)) != nil
+            await completion.record(succeeded)
+        }
+        let focus = try #require(await fixture.nextAppCommand())
+        let requestID = try #require(focus["requestID"] as? String)
+        try await fixture.sendBrowserEvent([
+            "type": "targetUnavailable",
+            "requestID": requestID,
+            "extensionInstallationID": target.extensionInstallationID,
+            "browserBundleIdentifier": target.browserBundleIdentifier,
+            "hookID": hookID.rawValue.uuidString,
+            "reason": "tab_closed",
+        ])
+
+        #expect(try await completion.waitForValue() == false)
+    }
+
+    @Test("Chrome Target 可用性检查不聚焦 tab，并区分关闭与 relay 故障")
+    func chromiumTargetValidationReturnsStableAvailability() async throws {
+        let fixture = try await RelayHandshakeFixture()
+        defer { fixture.stop() }
+        try await fixture.verifyConnection()
+        let hookID = HookID(rawValue: UUID())
+        let target = BrowserTarget(
+            browserBundleIdentifier: "com.google.Chrome",
+            nativeWindowIdentifier: 42,
+            extensionInstallationID: "installation-1",
+            tabIdentifier: 7,
+            host: "example.com",
+            initialURL: URL(string: "https://example.com")!,
+            initialTitle: "Example",
+            normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1),
+            observationMode: .dom
+        )
+
+        let available = BrowserTargetAvailabilityRecorder()
+        Task {
+            let result = try? await fixture.relay.targetIsAvailable(hookID: hookID, target: target)
+            await available.record(result)
+        }
+        let validate = try #require(await fixture.nextAppCommand())
+        #expect(validate["type"] as? String == "validateTarget")
+        let requestID = try #require(validate["requestID"] as? String)
+        try await fixture.sendBrowserEvent([
+            "type": "targetValidated",
+            "requestID": requestID,
+            "extensionInstallationID": target.extensionInstallationID,
+            "browserBundleIdentifier": target.browserBundleIdentifier,
+            "hookID": hookID.rawValue.uuidString,
+            "tabID": target.tabIdentifier,
+        ])
+        #expect(try await available.waitForValue() == true)
+
+        let unavailable = BrowserTargetAvailabilityRecorder()
+        Task {
+            let result = try? await fixture.relay.targetIsAvailable(hookID: hookID, target: target)
+            await unavailable.record(result)
+        }
+        let secondValidate = try #require(await fixture.nextAppCommand())
+        try await fixture.sendBrowserEvent([
+            "type": "targetUnavailable",
+            "requestID": try #require(secondValidate["requestID"] as? String),
+            "extensionInstallationID": target.extensionInstallationID,
+            "browserBundleIdentifier": target.browserBundleIdentifier,
+            "hookID": hookID.rawValue.uuidString,
+            "reason": "tab_closed",
+        ])
+        #expect(try await unavailable.waitForValue() == false)
+    }
+
+    @Test("Chrome ACK 超时后迟到响应不会完成后续命令")
+    func lateChromiumAcknowledgementDoesNotLeakAcrossCommands() async throws {
+        let fixture = try await RelayHandshakeFixture(
+            commandAcknowledgementTimeout: .milliseconds(150)
+        )
+        defer { fixture.stop() }
+        try await fixture.verifyConnection()
+        let hookID = HookID(rawValue: UUID())
+        let target = BrowserTarget(
+            browserBundleIdentifier: "com.google.Chrome",
+            nativeWindowIdentifier: 42,
+            extensionInstallationID: "installation-1",
+            tabIdentifier: 7,
+            host: "example.com",
+            initialURL: URL(string: "https://example.com")!,
+            initialTitle: "Example",
+            normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1),
+            observationMode: .dom
+        )
+
+        let firstCompletion = OperationCompletionRecorder()
+        Task {
+            let succeeded = (try? await fixture.relay.focus(hookID: hookID, target: target)) != nil
+            await firstCompletion.record(succeeded)
+        }
+        let first = try #require(await fixture.nextAppCommand())
+        let firstRequestID = try #require(first["requestID"] as? String)
+        #expect(try await firstCompletion.waitForValue() == false)
+        try await fixture.sendBrowserEvent([
+            "type": "targetFocused",
+            "requestID": firstRequestID,
+            "extensionInstallationID": target.extensionInstallationID,
+            "browserBundleIdentifier": target.browserBundleIdentifier,
+            "hookID": hookID.rawValue.uuidString,
+            "tabID": target.tabIdentifier,
+        ])
+
+        let secondCompletion = OperationCompletionRecorder()
+        Task {
+            let succeeded = (try? await fixture.relay.focus(hookID: hookID, target: target)) != nil
+            await secondCompletion.record(succeeded)
+        }
+        let second = try #require(await fixture.nextAppCommand())
+        let secondRequestID = try #require(second["requestID"] as? String)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(await secondCompletion.value == nil)
+        try await fixture.sendBrowserEvent([
+            "type": "targetFocused",
+            "requestID": secondRequestID,
+            "extensionInstallationID": target.extensionInstallationID,
+            "browserBundleIdentifier": target.browserBundleIdentifier,
+            "hookID": hookID.rawValue.uuidString,
+            "tabID": target.tabIdentifier,
+        ])
+        #expect(try await secondCompletion.waitForValue())
+    }
+
     @Test("用户在握手进行中框选时等待 pong 后继续原请求")
     func selectionWaitsForInFlightHandshake() async throws {
         let fixture = try await RelayHandshakeFixture(handshakeTimeout: .seconds(1))
         defer { fixture.stop() }
         try await fixture.sendBrowserEvent([
             "type": "ready",
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "com.google.Chrome",
         ])
@@ -157,6 +429,8 @@ struct NativeBrowserSelectionRelayHandshakeTests {
         try await fixture.sendBrowserEvent([
             "type": "pong",
             "requestID": try #require(ping["requestID"] as? String),
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "com.google.Chrome",
         ])
@@ -428,7 +702,8 @@ private final class RelayHandshakeFixture: @unchecked Sendable {
     init(
         safariCommandDispatcher: any SafariExtensionCommandDispatching = SafariExtensionCommandDispatcher(),
         handshakeTimeout: Duration = .seconds(10),
-        selectionCollectionTimeout: Duration = .seconds(3)
+        selectionCollectionTimeout: Duration = .seconds(3),
+        commandAcknowledgementTimeout: Duration = .seconds(1)
     ) async throws {
         let server = NativeBridgeServer()
         let descriptor = try await server.start()
@@ -439,7 +714,7 @@ private final class RelayHandshakeFixture: @unchecked Sendable {
             safariCommandDispatcher: safariCommandDispatcher,
             handshakeTimeout: handshakeTimeout,
             selectionCollectionTimeout: selectionCollectionTimeout,
-            commandAcknowledgementTimeout: .seconds(1)
+            commandAcknowledgementTimeout: commandAcknowledgementTimeout
         )
 
         self.server = server
@@ -467,6 +742,8 @@ private final class RelayHandshakeFixture: @unchecked Sendable {
     func verifyConnection() async throws {
         try await sendBrowserEvent([
             "type": "ready",
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "com.google.Chrome",
         ])
@@ -475,6 +752,8 @@ private final class RelayHandshakeFixture: @unchecked Sendable {
         try await sendBrowserEvent([
             "type": "pong",
             "requestID": requestID,
+            "protocolVersion": 1,
+            "extensionVersion": "0.1.0",
             "extensionInstallationID": "installation-1",
             "browserBundleIdentifier": "com.google.Chrome",
         ])
@@ -602,6 +881,23 @@ private actor OperationCompletionRecorder {
     }
 
     func waitForValue() async throws -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while ContinuousClock.now < deadline {
+            if let value { return value }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        throw CancellationError()
+    }
+}
+
+private actor BrowserTargetAvailabilityRecorder {
+    private(set) var value: Bool??
+
+    func record(_ result: Bool?) {
+        value = result
+    }
+
+    func waitForValue() async throws -> Bool? {
         let deadline = ContinuousClock.now.advanced(by: .seconds(3))
         while ContinuousClock.now < deadline {
             if let value { return value }

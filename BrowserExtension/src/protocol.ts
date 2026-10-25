@@ -1,4 +1,6 @@
 export const nativeHostName = "org.awaitcue.native";
+// App 与扩展公开协议独立于产品版本；不兼容变更时必须显式递增。
+export const chromiumProtocolVersion = 1;
 
 export type NormalizedRegion = Readonly<{
   x: number;
@@ -20,12 +22,24 @@ export type BindTargetCommand = Readonly<{
 
 export type UnbindTargetCommand = Readonly<{
   type: "unbindTarget";
+  requestID: string;
   extensionInstallationID: string;
   hookID: string;
 }>;
 
 export type FocusTargetCommand = Readonly<{
   type: "focusTarget";
+  requestID: string;
+  extensionInstallationID: string;
+  hookID: string;
+  tabID: number;
+  expectedHost: string;
+  expectedURL: string;
+}>;
+
+export type ValidateTargetCommand = Readonly<{
+  type: "validateTarget";
+  requestID: string;
   extensionInstallationID: string;
   hookID: string;
   tabID: number;
@@ -64,6 +78,7 @@ export type NativeCommand =
   | BindTargetCommand
   | UnbindTargetCommand
   | FocusTargetCommand
+  | ValidateTargetCommand
   | ResolveSelectionCommand
   | ResolveActiveHostCommand
   | PingCommand;
@@ -80,10 +95,18 @@ export type Evidence = Readonly<{
 }>;
 
 export type ExtensionEvent =
-  | Readonly<{ type: "ready"; browser: string; extensionInstallationID: string }>
+  | Readonly<{
+      type: "ready";
+      browser: string;
+      protocolVersion: number;
+      extensionVersion: string;
+      extensionInstallationID: string;
+    }>
   | Readonly<{
       type: "pong";
       requestID: string;
+      protocolVersion: number;
+      extensionVersion: string;
       extensionInstallationID: string;
     }>
   | Readonly<{
@@ -99,6 +122,26 @@ export type ExtensionEvent =
       extensionInstallationID: string;
       hookID: string;
       reason: string;
+    }>
+  | Readonly<{
+      type: "targetFocused";
+      requestID: string;
+      extensionInstallationID: string;
+      hookID: string;
+      tabID: number;
+    }>
+  | Readonly<{
+      type: "targetUnbound";
+      requestID: string;
+      extensionInstallationID: string;
+      hookID: string;
+    }>
+  | Readonly<{
+      type: "targetValidated";
+      requestID: string;
+      extensionInstallationID: string;
+      hookID: string;
+      tabID: number;
     }>
   | Readonly<{ type: "evidenceChanged"; extensionInstallationID: string; evidence: Evidence }>
   | Readonly<{
@@ -166,17 +209,20 @@ export function parseNativeCommand(value: unknown): NativeCommand | null {
   }
   if (
     value.type === "unbindTarget" &&
+    typeof value.requestID === "string" &&
     typeof value.extensionInstallationID === "string" &&
     typeof value.hookID === "string"
   ) {
     return {
       type: "unbindTarget",
+      requestID: value.requestID,
       extensionInstallationID: value.extensionInstallationID,
       hookID: value.hookID
     };
   }
   if (
-    value.type === "focusTarget" &&
+    (value.type === "focusTarget" || value.type === "validateTarget") &&
+    typeof value.requestID === "string" &&
     typeof value.extensionInstallationID === "string" &&
     typeof value.hookID === "string" &&
     typeof value.tabID === "number" &&
@@ -184,7 +230,8 @@ export function parseNativeCommand(value: unknown): NativeCommand | null {
     typeof value.expectedURL === "string"
   ) {
     return {
-      type: "focusTarget",
+      type: value.type,
+      requestID: value.requestID,
       extensionInstallationID: value.extensionInstallationID,
       hookID: value.hookID,
       tabID: value.tabID,

@@ -34,15 +34,18 @@ describe("native protocol", () => {
     });
     expect(parseNativeCommand({
       type: "unbindTarget",
+      requestID: "unbind-1",
       extensionInstallationID: "installation-1",
       hookID: "hook-1"
     })).toEqual({
       type: "unbindTarget",
+      requestID: "unbind-1",
       extensionInstallationID: "installation-1",
       hookID: "hook-1"
     });
     expect(parseNativeCommand({
       type: "focusTarget",
+      requestID: "focus-1",
       extensionInstallationID: "installation-1",
       hookID: "hook-1",
       tabID: 7,
@@ -50,6 +53,24 @@ describe("native protocol", () => {
       expectedURL: "https://example.com/build"
     })).toEqual({
       type: "focusTarget",
+      requestID: "focus-1",
+      extensionInstallationID: "installation-1",
+      hookID: "hook-1",
+      tabID: 7,
+      expectedHost: "example.com",
+      expectedURL: "https://example.com/build"
+    });
+    expect(parseNativeCommand({
+      type: "validateTarget",
+      requestID: "validate-1",
+      extensionInstallationID: "installation-1",
+      hookID: "hook-1",
+      tabID: 7,
+      expectedHost: "example.com",
+      expectedURL: "https://example.com/build"
+    })).toEqual({
+      type: "validateTarget",
+      requestID: "validate-1",
       extensionInstallationID: "installation-1",
       hookID: "hook-1",
       tabID: 7,
@@ -86,6 +107,27 @@ describe("native protocol", () => {
     expect(parseNativeCommand({ type: "unknown" })).toBeNull();
     expect(parseNativeCommand({ type: "resolveSelection", requestID: "missing-rects" })).toBeNull();
     expect(parseNativeCommand({ type: "unbindTarget" })).toBeNull();
+    expect(parseNativeCommand({
+      type: "unbindTarget",
+      extensionInstallationID: "installation-1",
+      hookID: "hook-1"
+    })).toBeNull();
+    expect(parseNativeCommand({
+      type: "focusTarget",
+      extensionInstallationID: "installation-1",
+      hookID: "hook-1",
+      tabID: 7,
+      expectedHost: "example.com",
+      expectedURL: "https://example.com/build"
+    })).toBeNull();
+    expect(parseNativeCommand({
+      type: "validateTarget",
+      extensionInstallationID: "installation-1",
+      hookID: "hook-1",
+      tabID: 7,
+      expectedHost: "example.com",
+      expectedURL: "https://example.com/build"
+    })).toBeNull();
     expect(
       parseNativeCommand({
         type: "bindTarget",

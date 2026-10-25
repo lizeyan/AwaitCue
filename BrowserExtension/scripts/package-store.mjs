@@ -1,13 +1,15 @@
 import { execFile } from "node:child_process";
 import { readFile, readdir, rm, stat, utimes } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const execute = promisify(execFile);
-const extensionRoot = resolve(new URL("..", import.meta.url).pathname);
+const extensionRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 await execute("node", ["scripts/build.mjs"], { cwd: extensionRoot });
 
-const manifest = JSON.parse(await readFile(join(extensionRoot, "manifest.json"), "utf8"));
+// 版本必须来自实际将要上传的构建产物，避免 tag、文件名和 manifest 三者漂移。
+const manifest = JSON.parse(await readFile(join(extensionRoot, "dist", "manifest.json"), "utf8"));
 const outputPath = join(extensionRoot, "dist", `awaitcue-chromium-${manifest.version}.zip`);
 await rm(outputPath, { force: true });
 const dist = join(extensionRoot, "dist");

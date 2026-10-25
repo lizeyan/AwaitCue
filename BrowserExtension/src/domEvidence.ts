@@ -24,6 +24,7 @@ const evidenceAttributes = [
 const mutationAttributes = [...evidenceAttributes, "class"];
 const ignoredTextParentTags = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"]);
 const semanticClassPattern = /(success|succeed|done|complete|check|fail|error|running|loading|pending|wait|ignored|disabled|status|progress)/i;
+const mutationCoalescingMilliseconds = 300;
 
 type EvidenceRow = Readonly<{ x: number; y: number; text: string }>;
 
@@ -120,6 +121,7 @@ export class EvidenceObserver {
   readonly #region: NormalizedRegion;
   readonly #onChange: (evidence: Evidence) => void;
   #observer: MutationObserver | null = null;
+  #pendingCheck: ReturnType<typeof setTimeout> | null = null;
   #lastFingerprint: string | null = null;
 
   constructor(document: Document, hookID: string, region: NormalizedRegion, onChange: (evidence: Evidence) => void) {
@@ -130,8 +132,9 @@ export class EvidenceObserver {
   }
 
   start(): Evidence {
-    const initial = this.check();
-    this.#observer = new MutationObserver(() => this.check());
+    const initial = collectEvidence(this.#document, this.#hookID, this.#region);
+    this.#lastFingerprint = initial.fingerprint;
+    this.#observer = new MutationObserver(() => this.scheduleCheck());
     this.#observer.observe(this.#document.documentElement, {
       attributes: true,
       childList: true,
@@ -145,6 +148,10 @@ export class EvidenceObserver {
   stop(): void {
     this.#observer?.disconnect();
     this.#observer = null;
+    if (this.#pendingCheck !== null) {
+      clearTimeout(this.#pendingCheck);
+      this.#pendingCheck = null;
+    }
   }
 
   check(): Evidence {
@@ -154,6 +161,15 @@ export class EvidenceObserver {
       this.#onChange(evidence);
     }
     return evidence;
+  }
+
+  /** 一个页面更新通常产生大量相邻 mutation；同一 300ms 窗口只重新采集一次。 */
+  private scheduleCheck(): void {
+    if (this.#pendingCheck !== null) return;
+    this.#pendingCheck = globalThis.setTimeout(() => {
+      this.#pendingCheck = null;
+      this.check();
+    }, mutationCoalescingMilliseconds);
   }
 }
 

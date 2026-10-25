@@ -24,15 +24,19 @@ install_manifest() {
   manifest="${directory}/${host_name}.json"
   temporary="$(mktemp "${directory}/.${host_name}.XXXXXX")"
   chmod 600 "${temporary}"
-  {
-    echo '{'
-    echo "  \"name\": \"${host_name}\","
-    echo '  "description": "AwaitCue local browser relay",'
-    echo "  \"path\": \"${host_path}\","
-    echo '  "type": "stdio",'
-    echo "  \"allowed_origins\": [\"chrome-extension://${extension_id}/\"]"
-    echo '}'
-  } > "${temporary}"
+  # 路径来自本机安装位置，可能包含空格、引号或反斜杠；必须由 JSON encoder
+  # 负责转义，不能用字符串拼接生成 Native Messaging manifest。
+  jq -n \
+    --arg name "${host_name}" \
+    --arg path "${host_path}" \
+    --arg origin "chrome-extension://${extension_id}/" \
+    '{
+      name: $name,
+      description: "AwaitCue local browser relay",
+      path: $path,
+      type: "stdio",
+      allowed_origins: [$origin]
+    }' > "${temporary}"
   mv "${temporary}" "${manifest}"
   echo "Installed ${manifest}"
 }

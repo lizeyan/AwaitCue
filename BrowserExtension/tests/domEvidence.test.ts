@@ -127,21 +127,27 @@ describe("DOM evidence", () => {
   });
 
   it("emits only when the evidence fingerprint changes", async () => {
+    vi.useFakeTimers();
     const onChange = vi.fn();
     const observer = new EvidenceObserver(document, "hook", { x: 0, y: 0, width: 1, height: 1 }, onChange);
 
     observer.start();
     observer.check();
-    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
 
     document.querySelector("#inside span")!.textContent = "Failed";
-    await new Promise((resolve) => window.setTimeout(resolve, 0));
-    expect(onChange.mock.calls.length).toBeGreaterThanOrEqual(2);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    observer.check();
+    expect(onChange).toHaveBeenCalledTimes(1);
 
     observer.stop();
+    vi.useRealTimers();
   });
 
   it("emits when a background page changes only its semantic status class", async () => {
+    vi.useFakeTimers();
     const status = document.querySelector<HTMLElement>("#inside")!;
     status.className = "pipeline-status-pending";
     const onChange = vi.fn();
@@ -155,23 +161,59 @@ describe("DOM evidence", () => {
     onChange.mockClear();
 
     status.className = "pipeline-status-success";
-    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(300);
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0]?.[0].aria).toContain("class:pipeline-status-success");
     observer.stop();
+    vi.useRealTimers();
   });
 
   it("ignores mutations whose rendered evidence stays outside the region", async () => {
+    vi.useFakeTimers();
     const onChange = vi.fn();
     const observer = new EvidenceObserver(document, "hook", { x: 0.05, y: 0.1, width: 0.4, height: 0.4 }, onChange);
     observer.start();
 
     document.querySelector<HTMLElement>("#outside")!.textContent = "Changed secret outside region";
-    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(300);
 
-    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
     observer.stop();
+    vi.useRealTimers();
+  });
+
+  it("coalesces a mutation burst and cancels pending collection when stopped", async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    const observer = new EvidenceObserver(
+      document,
+      "hook",
+      { x: 0, y: 0, width: 1, height: 1 },
+      onChange
+    );
+    observer.start();
+    onChange.mockClear();
+
+    for (let index = 0; index < 100; index += 1) {
+      document.querySelector("#inside span")!.textContent = `State ${index}`;
+      await Promise.resolve();
+    }
+    expect(onChange).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(299);
+    expect(onChange).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0]?.[0].text).toContain("State 99");
+
+    document.querySelector("#inside span")!.textContent = "Cancelled change";
+    await Promise.resolve();
+    observer.stop();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it("produces deterministic fingerprints", () => {

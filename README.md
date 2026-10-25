@@ -95,16 +95,22 @@ Run the AppKit end-to-end window behavior tests:
 ./Scripts/run-macos-e2e.sh
 ```
 
-On a local Mac whose terminal has Accessibility permission, the optional live layer exercises the real global shortcut, rectangle selection, a Calculator Target, close/reopen behavior, and an available Chromium Target without modifying TCC records:
+On a local Mac whose terminal has Accessibility permission, the optional live layer uses an isolated SQLite database and a loopback-only fixture page. It exercises the real global shortcut, rectangle selection, the actual settings and creation forms, a Calculator Target, and Chromium without modifying user Hook data or TCC records:
 
 ```bash
 ./Scripts/run-macos-e2e.sh --live
 ```
 
-For final local acceptance, require the installed Chromium extension instead of allowing that optional stage to skip:
+For final local acceptance, require the installed Chromium extension instead of allowing that stage to skip. This path verifies that Chrome loaded `BrowserExtension/dist` from the current checkout and reinstalls the current Native Host. It uses a loopback-only Responses fixture to create a real Browser Condition Hook, proves pending DOM evidence is re-read after an App restart, mutates the page to a completed state, waits for two stable matched decisions, and then separately creates/restores/cancels a Delay Hook before confirming the menu returns to zero:
 
 ```bash
 ./Scripts/run-macos-e2e.sh --live --require-chromium
+```
+
+Validate Native Messaging installation independently on temporary Chrome-profile directories, including repeated installation, ID replacement, invalid IDs, executable paths with spaces, JSON validity, and `0600` permissions:
+
+```bash
+./Scripts/test-native-host-install.sh
 ```
 
 Validate the fixed Decision benchmark corpus and scoring contract:
@@ -140,9 +146,9 @@ Submission requirements, permission justifications, listing copy, and remaining 
 
 Unpacked extension IDs can differ by browser and profile, so the installer accepts a separate ID for Chrome, Edge, Chromium, and Arc. The native host only relays messages while the AwaitCue menu bar app is running and has published a private loopback token.
 
-Arc support is experimental. AwaitCue safely rejects selections when a visible Arc sidebar, docked DevTools, or another wide asymmetric browser-chrome layout prevents the extension from proving the page viewport's screen origin; it never falls back to a guessed region. Hiding the sidebar may allow selection, but Chrome remains the reference browser for the current release.
+Chrome vertical tabs and other wide sidebars are supported when the selected rectangle itself uniquely proves whether the page viewport is on the left or right; selections in the ambiguous overlap are still rejected instead of guessed. Arc support remains experimental, and docked DevTools or layouts whose viewport origin cannot be uniquely established continue to fail safely. Chrome remains the reference browser for the current release.
 
-The protected `master` branch requires every PR check to pass. Testable Swift library seams and shared TypeScript business modules are each required to remain at or above 90% coverage. Thin AppKit/TCC, native-host stdio, Safari native-extension entrypoints, and browser API entrypoints are excluded from automated coverage and must pass build plus real-environment smoke validation. Required CI builds the complete app bundle and verifies that the Safari `.appex` is embedded; enabling it and exercising a real Safari tab remains an explicit local/manual gate because CI cannot approve Safari website permissions on the user's behalf.
+The protected `master` branch requires every PR check to pass. Testable Swift library seams and shared TypeScript business modules are each required to remain at or above 90% coverage. `coverage/swift.lcov` is that core gate; `coverage/swift-all.lcov` additionally includes `AwaitCueApp`, SwiftUI, AppKit, TCC, and system adapters so UI/wiring gaps remain visible instead of being hidden behind the core number. User-facing App behavior is required to pass the AppKit tests plus the permission-gated real-process smoke above. Required CI still builds the complete app bundle; Safari remains outside the current local-App/Chrome acceptance scope until Apple signing is available.
 
 The default global Hook shortcut is `Control-Shift-Space` (`⌃⇧Space`). It avoids 1Password's common `Command-Shift-Space` shortcut and can be changed to another preset in AwaitCue settings. It freezes every display in memory, enforces a single-window selection, and then opens the Condition/Delay creation sheet.
 

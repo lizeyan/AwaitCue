@@ -7,6 +7,10 @@ import AwaitCueSelection
 import Foundation
 import OSLog
 
+private enum BrowserTargetCommandError: Error {
+    case targetUnavailable
+}
+
 struct BrowserBridgeStatusUpdate: Sendable {
     let browserBundleIdentifier: String?
     let message: String
@@ -14,6 +18,8 @@ struct BrowserBridgeStatusUpdate: Sendable {
 
 /// 通过浏览器各自的 transport 查询具体标签页身份和 DOM-only 页面证据。
 actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostResolving {
+    private static let chromiumProtocolVersion = 1
+    private static let versionMismatchMessage = "浏览器扩展版本不匹配，请更新或重新加载"
     private static let logger = Logger(
         subsystem: "org.awaitcue.AwaitCue",
         category: "BrowserSelectionRelay"
@@ -46,6 +52,8 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     private struct BrowserInstallationIdentity: Hashable {
         let extensionInstallationID: String
         let browserBundleIdentifier: String
+        let protocolVersion: Int?
+        let extensionVersion: String?
     }
 
     private struct PendingBinding {
@@ -206,22 +214,15 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             "extensionInstallationID": target.extensionInstallationID,
             "hookID": hookID.rawValue.uuidString,
         ]
-        if target.browserBundleIdentifier == SafariBridgeMessageCodec.browserBundleIdentifier {
-            let requestID = UUID().uuidString
-            command["requestID"] = requestID
-            try await sendSafariCommandAwaitingAcknowledgement(
-                command,
-                requestID: requestID,
-                expectedAcknowledgement: "targetUnbound",
-                hookID: hookID,
-                target: target
-            )
-        } else {
-            _ = try await sendPayload(
-                JSONSerialization.data(withJSONObject: command),
-                to: target.browserBundleIdentifier
-            )
-        }
+        let requestID = UUID().uuidString
+        command["requestID"] = requestID
+        try await sendCommandAwaitingAcknowledgement(
+            command,
+            requestID: requestID,
+            expectedAcknowledgement: "targetUnbound",
+            hookID: hookID,
+            target: target
+        )
         evidenceByHook[hookID] = nil
         installationByHook[hookID] = nil
     }
@@ -236,21 +237,40 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             "expectedHost": target.host,
             "expectedURL": target.initialURL.absoluteString,
         ]
-        if target.browserBundleIdentifier == SafariBridgeMessageCodec.browserBundleIdentifier {
-            let requestID = UUID().uuidString
-            command["requestID"] = requestID
-            try await sendSafariCommandAwaitingAcknowledgement(
+        let requestID = UUID().uuidString
+        command["requestID"] = requestID
+        try await sendCommandAwaitingAcknowledgement(
+            command,
+            requestID: requestID,
+            expectedAcknowledgement: "targetFocused",
+            hookID: hookID,
+            target: target
+        )
+    }
+
+    /// 验证 Delay 或已满足 Hook 原先绑定的 tab 仍是同一 Target，不产生聚焦或 DOM 观察副作用。
+    func targetIsAvailable(hookID: HookID, target: BrowserTarget) async throws -> Bool {
+        let requestID = UUID().uuidString
+        let command: [String: Any] = [
+            "type": "validateTarget",
+            "requestID": requestID,
+            "extensionInstallationID": target.extensionInstallationID,
+            "hookID": hookID.rawValue.uuidString,
+            "tabID": target.tabIdentifier,
+            "expectedHost": target.host,
+            "expectedURL": target.initialURL.absoluteString,
+        ]
+        do {
+            try await sendCommandAwaitingAcknowledgement(
                 command,
                 requestID: requestID,
-                expectedAcknowledgement: "targetFocused",
+                expectedAcknowledgement: "targetValidated",
                 hookID: hookID,
                 target: target
             )
-        } else {
-            _ = try await sendPayload(
-                JSONSerialization.data(withJSONObject: command),
-                to: target.browserBundleIdentifier
-            )
+            return true
+        } catch BrowserTargetCommandError.targetUnavailable {
+            return false
         }
     }
 
@@ -398,7 +418,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             handleDOMEvidence(object)
         case "targetBound":
             handleTargetBound(object)
-        case "targetFocused", "targetUnbound":
+        case "targetFocused", "targetUnbound", "targetValidated":
             handleTargetCommandAcknowledgement(type: type, object: object)
         case "targetUnavailable":
             statusContinuation.yield(
@@ -430,20 +450,45 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         else {
             return
         }
-        let identity = BrowserInstallationIdentity(
-            extensionInstallationID: extensionInstallationID,
-            browserBundleIdentifier: browserBundleIdentifier
-        )
-        // 同一 service worker 再次 ready 时，旧验证不能替新端口背书；旧 timeout 也必须失效。
-        verifiedInstallations.remove(identity)
+        // 同一 installation 的旧 worker 或旧协议不能继续沿用先前的验证状态。
+        verifiedInstallations = verifiedInstallations.filter {
+            $0.extensionInstallationID != extensionInstallationID
+                || $0.browserBundleIdentifier != browserBundleIdentifier
+        }
         let supersededRequestIDs = pendingHandshakes.compactMap { requestID, value in
-            value == identity ? requestID : nil
+            value.extensionInstallationID == extensionInstallationID
+                && value.browserBundleIdentifier == browserBundleIdentifier
+                ? requestID
+                : nil
         }
         for requestID in supersededRequestIDs {
             pendingHandshakes[requestID] = nil
             timedOutHandshakeRequestIDs.remove(requestID)
         }
 
+        let isSafari = browserBundleIdentifier
+            == SafariBridgeMessageCodec.browserBundleIdentifier
+        let protocolVersion = object["protocolVersion"] as? Int
+        let extensionVersion = object["extensionVersion"] as? String
+        if !isSafari,
+           protocolVersion != Self.chromiumProtocolVersion
+            || extensionVersion?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+        {
+            statusContinuation.yield(
+                BrowserBridgeStatusUpdate(
+                    browserBundleIdentifier: browserBundleIdentifier,
+                    message: Self.versionMismatchMessage
+                )
+            )
+            return
+        }
+        let identity = BrowserInstallationIdentity(
+            extensionInstallationID: extensionInstallationID,
+            browserBundleIdentifier: browserBundleIdentifier,
+            protocolVersion: isSafari ? nil : protocolVersion,
+            extensionVersion: isSafari ? nil : extensionVersion
+        )
+        // 同一 service worker 再次 ready 时，旧验证不能替新端口背书；旧 timeout 也必须失效。
         let requestID = UUID().uuidString
         pendingHandshakes[requestID] = identity
         let timeout = handshakeTimeout
@@ -495,6 +540,21 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
               expectedIdentity.extensionInstallationID == extensionInstallationID,
               expectedIdentity.browserBundleIdentifier == browserBundleIdentifier
         else {
+            return
+        }
+        if expectedIdentity.browserBundleIdentifier
+            != SafariBridgeMessageCodec.browserBundleIdentifier,
+           object["protocolVersion"] as? Int != expectedIdentity.protocolVersion
+            || object["extensionVersion"] as? String != expectedIdentity.extensionVersion
+        {
+            pendingHandshakes[requestID] = nil
+            timedOutHandshakeRequestIDs.remove(requestID)
+            statusContinuation.yield(
+                BrowserBridgeStatusUpdate(
+                    browserBundleIdentifier: expectedIdentity.browserBundleIdentifier,
+                    message: Self.versionMismatchMessage
+                )
+            )
             return
         }
         pendingHandshakes = pendingHandshakes.filter { $0.value != expectedIdentity }
@@ -556,9 +616,8 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         return try await server.broadcastPayload(payload)
     }
 
-    /// Safari 的 dispatch completion 只代表系统接受了消息，不能证明休眠中的 worker 已执行命令。
-    /// 聚焦和解绑必须等待 WebExtension 返回带 requestID 的完成确认。
-    private func sendSafariCommandAwaitingAcknowledgement(
+    /// transport 接受消息不代表扩展已经完成操作；聚焦和解绑统一等待关联 ACK。
+    private func sendCommandAwaitingAcknowledgement(
         _ command: [String: Any],
         requestID: String,
         expectedAcknowledgement: String,
@@ -627,7 +686,10 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
            pendingCommand.extensionInstallationID == installationID,
            pendingCommand.browserBundleIdentifier == browserBundleIdentifier
         {
-            finishTargetCommand(requestID: requestID, error: NativeBridgeError.disconnected)
+            let error: any Error = pendingCommand.expectedAcknowledgement == "targetValidated"
+                ? BrowserTargetCommandError.targetUnavailable
+                : NativeBridgeError.disconnected
+            finishTargetCommand(requestID: requestID, error: error)
         }
         guard let binding = installationByHook[hookID],
               binding.extensionInstallationID == installationID,
