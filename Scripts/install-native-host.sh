@@ -2,7 +2,16 @@
 
 set -euo pipefail
 
-readonly app_path="${1:-/Applications/AwaitCue.app}"
+readonly requested_app_path="${1:-/Applications/AwaitCue.app}"
+# Chrome Native Messaging 明确要求绝对 executable path；调用者从仓库根目录传入
+# dist/AwaitCue.app 时也必须在落盘前规范化，不能把 shell 当前目录泄漏进 manifest。
+readonly app_path="$(/usr/bin/python3 - "${requested_app_path}" <<'PY'
+import os
+import sys
+
+print(os.path.realpath(sys.argv[1]))
+PY
+)"
 readonly host_path="${app_path}/Contents/MacOS/AwaitCueNativeHost"
 readonly host_name="org.awaitcue.native"
 
