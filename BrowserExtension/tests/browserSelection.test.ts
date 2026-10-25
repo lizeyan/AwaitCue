@@ -30,8 +30,60 @@ describe("browser selection mapping", () => {
     expect(normalizeSelectionToViewport({ x: 0, y: 0, width: 1, height: 1 }, { ...metrics, screenX: Number.NaN })).toBeNull();
     expect(
       normalizeSelectionToViewport(
-        { x: 300, y: 200, width: 100, height: 100 },
+        { x: 500, y: 200, width: 100, height: 100 },
         { ...metrics, innerWidth: 700 }
+      )
+    ).toBeNull();
+  });
+
+  it("uses the selected edge to disambiguate a wide left or right browser sidebar", () => {
+    const metrics = {
+      screenX: 100,
+      screenY: 100,
+      outerWidth: 1_000,
+      outerHeight: 800,
+      innerWidth: 760,
+      innerHeight: 740
+    };
+
+    expect(
+      normalizeSelectionToViewport(
+        { x: 700, y: 250, width: 300, height: 200 },
+        metrics
+      )
+    ).toEqual({
+      x: 360 / 760,
+      y: 90 / 740,
+      width: 300 / 760,
+      height: 200 / 740
+    });
+    expect(
+      normalizeSelectionToViewport(
+        { x: 150, y: 250, width: 300, height: 200 },
+        metrics
+      )
+    ).toEqual({
+      x: 50 / 760,
+      y: 90 / 740,
+      width: 300 / 760,
+      height: 200 / 740
+    });
+  });
+
+  it("rejects a wide-sidebar selection when both viewport sides remain plausible", () => {
+    const metrics = {
+      screenX: 100,
+      screenY: 100,
+      outerWidth: 1_000,
+      outerHeight: 800,
+      innerWidth: 760,
+      innerHeight: 740
+    };
+
+    expect(
+      normalizeSelectionToViewport(
+        { x: 450, y: 250, width: 200, height: 200 },
+        metrics
       )
     ).toBeNull();
   });

@@ -95,26 +95,29 @@ export function normalizeSelectionToViewport(
   if (metrics.innerWidth <= 0 || metrics.innerHeight <= 0) return null;
 
   const horizontalDifference = Math.max(0, metrics.outerWidth - metrics.innerWidth);
-  // 浏览器没有标准 API 暴露 viewport 的绝对屏幕原点；明显的侧栏/停靠 DevTools 布局宁可拒绝，也不能错传别处像素。
-  if (horizontalDifference > 64) return null;
-  const horizontalInset = horizontalDifference / 2;
-  const verticalChrome = Math.max(0, metrics.outerHeight - metrics.innerHeight - horizontalInset);
-  const viewport = {
-    x: metrics.screenX + horizontalInset,
+  const hasWideAsymmetricChrome = horizontalDifference > 64;
+  const horizontalOffsets = hasWideAsymmetricChrome
+    ? [0, horizontalDifference]
+    : [horizontalDifference / 2];
+  const borderInset = hasWideAsymmetricChrome ? 0 : horizontalDifference / 2;
+  const verticalChrome = Math.max(0, metrics.outerHeight - metrics.innerHeight - borderInset);
+  const selectionRight = selection.x + selection.width;
+  const selectionBottom = selection.y + selection.height;
+  const matchingViewports = horizontalOffsets.map((horizontalOffset) => ({
+    x: metrics.screenX + horizontalOffset,
     y: metrics.screenY + verticalChrome,
     width: metrics.innerWidth,
     height: metrics.innerHeight
-  };
-  const selectionRight = selection.x + selection.width;
-  const selectionBottom = selection.y + selection.height;
-  if (
-    selection.x < viewport.x ||
-    selection.y < viewport.y ||
-    selectionRight > viewport.x + viewport.width ||
-    selectionBottom > viewport.y + viewport.height
-  ) {
-    return null;
-  }
+  })).filter((viewport) => (
+    selection.x >= viewport.x &&
+    selection.y >= viewport.y &&
+    selectionRight <= viewport.x + viewport.width &&
+    selectionBottom <= viewport.y + viewport.height
+  ));
+  // 浏览器没有 API 直接暴露宽侧栏在左还是右；只有选区本身能唯一排除一侧时才接受。
+  // 落在两个候选重叠区时继续拒绝，不能为了兼容垂直标签栏而猜测 DOM 坐标。
+  if (matchingViewports.length !== 1) return null;
+  const viewport = matchingViewports[0]!;
 
   return {
     x: (selection.x - viewport.x) / viewport.width,
