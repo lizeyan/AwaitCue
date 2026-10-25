@@ -39,7 +39,7 @@ chrome.action.onClicked.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener((message: unknown, sender) => {
-  if (!isRecord(message) || !nativePort) return;
+  if (!isRecord(message)) return;
   if (
     message.type === "awaitcue.focusedTab" &&
     sender.tab &&
@@ -53,8 +53,11 @@ chrome.runtime.onMessage.addListener((message: unknown, sender) => {
       windowFrame: message.windowFrame,
       observedAt: Date.now()
     };
+    // 用户回到页面并开始框选时不能继续等待最长 30 秒退避；焦点事件是明确的即时连接意图。
+    if (!nativePort) connectNative();
     return;
   }
+  if (!nativePort) return;
   if (message.type === "awaitcue.evidence") {
     const evidence = normalizeEvidence(message.evidence);
     if (!evidence) return;

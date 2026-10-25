@@ -57,6 +57,15 @@ fi
 
 # live Chromium smoke 必须加载当前工作树构建出的扩展，不能让旧 service worker
 # 与新 App 偶然完成握手后再把真实产品回归误报成普通超时。
+# Chrome 留在后台时会在旧 Host 被终止后立即重连；必须先退出浏览器，避免它在
+# build-app 覆盖 bundle 的中途重新执行 Native Host 并锁住 Info.plist 或签名目标。
+if [[ "${require_chromium}" == true ]]; then
+    osascript -e 'tell application "Google Chrome" to quit' >/dev/null 2>&1 || true
+    for _ in {1..100}; do
+        LC_ALL=C pgrep -x "Google Chrome" >/dev/null || break
+        sleep 0.1
+    done
+fi
 # 上一轮 App 或 Safari appex 仍在运行/注册时，macOS 会拒绝覆盖 bundle；必须先释放构建目标。
 for executable_path in "${app_executable}" "${native_host_executable}"; do
     while IFS= read -r process_id; do
@@ -84,11 +93,6 @@ codesign --force --options runtime \
 if [[ "${require_chromium}" == true ]]; then
     # `--require-chromium` 是显式本机测试模式；受控重启会让 unpacked extension
     # 重新读取 BrowserExtension/dist，避免 Chrome 继续运行内存中的旧 MV3 worker。
-    osascript -e 'tell application "Google Chrome" to quit' >/dev/null 2>&1 || true
-    for _ in {1..100}; do
-        LC_ALL=C pgrep -x "Google Chrome" >/dev/null || break
-        sleep 0.1
-    done
     open -a "Google Chrome"
     for _ in {1..100}; do
         LC_ALL=C pgrep -x "Google Chrome" >/dev/null && break
@@ -356,7 +360,21 @@ APPLESCRIPT
 }
 
 if [[ "${require_chromium}" == true ]]; then
-    reload_current_chromium_extension
+    if [[ "${AWAITCUE_E2E_SKIP_CHROMIUM_REPAIR:-0}" == "1" ]]; then
+        native_manifest="${HOME}/Library/Application Support/Google/Chrome/NativeMessagingHosts/org.awaitcue.native.json"
+        if [[ ! -f "${native_manifest}" ]]; then
+            echo "FAIL: no-repair E2E requires an existing Native Messaging manifest." >&2
+            exit 19
+        fi
+        installed_host_path="$(jq -r '.path // ""' "${native_manifest}")"
+        if [[ "${installed_host_path}" != "${native_host_executable}" ]]; then
+            echo "FAIL: no-repair E2E found stale Native Host path: ${installed_host_path}" >&2
+            exit 19
+        fi
+        echo "E2E stage: using existing Chromium installation without manifest repair or extension reload"
+    else
+        reload_current_chromium_extension
+    fi
 fi
 
 open_settings_from_menu_bar() {
@@ -1248,53 +1266,59 @@ SWIFT
     if [[ -n "${AWAITCUE_E2E_CAPTURE_PATH:-}" ]]; then
         screencapture -x "${AWAITCUE_E2E_CAPTURE_PATH}"
     fi
-    echo "E2E stage: create observing Chrome Condition Hook"
-    create_condition_hook_from_form
-    wait_for_creation_window_to_close
-    wait_for_model_requests \
-        "condition_evaluation" \
-        "data-status:running" \
-        1
-    verify_menu_hook "1" "AwaitCue Chrome E2E Target"
+    if [[ "${AWAITCUE_E2E_SKIP_CHROMIUM_REPAIR:-0}" == "1" ]]; then
+        echo "E2E stage: existing Chrome installation connected without repair"
+        close_creation_window
+        wait_for_creation_window_to_close
+    else
+        echo "E2E stage: create observing Chrome Condition Hook"
+        create_condition_hook_from_form
+        wait_for_creation_window_to_close
+        wait_for_model_requests \
+            "condition_evaluation" \
+            "data-status:running" \
+            1
+        verify_menu_hook "1" "AwaitCue Chrome E2E Target"
 
-    echo "E2E stage: restart while Condition is still observing"
-    pending_before_restart="$(model_request_count \
-        "condition_evaluation" \
-        "data-status:running")"
-    restart_e2e_app
-    wait_for_model_requests \
-        "condition_evaluation" \
-        "data-status:running" \
-        "$((pending_before_restart + 1))"
+        echo "E2E stage: restart while Condition is still observing"
+        pending_before_restart="$(model_request_count \
+            "condition_evaluation" \
+            "data-status:running")"
+        restart_e2e_app
+        wait_for_model_requests \
+            "condition_evaluation" \
+            "data-status:running" \
+            "$((pending_before_restart + 1))"
 
-    echo "E2E stage: mutate DOM and wait for two stable matched decisions"
-    osascript -e 'tell application "Google Chrome" to activate'
-    mark_chromium_fixture_complete
-    wait_for_model_requests \
-        "condition_evaluation" \
-        "data-status:success" \
-        2
-    verify_menu_hook "1" "AwaitCue Chrome E2E Target"
-    echo "E2E stage: cancel completed Condition observation"
-    click_menu_action "awaitcue.menu.cancel-hook"
-    sleep 0.3
-    verify_menu_hook "0" ""
+        echo "E2E stage: mutate DOM and wait for two stable matched decisions"
+        osascript -e 'tell application "Google Chrome" to activate'
+        mark_chromium_fixture_complete
+        wait_for_model_requests \
+            "condition_evaluation" \
+            "data-status:success" \
+            2
+        verify_menu_hook "1" "AwaitCue Chrome E2E Target"
+        echo "E2E stage: cancel completed Condition observation"
+        click_menu_action "awaitcue.menu.cancel-hook"
+        sleep 0.3
+        verify_menu_hook "0" ""
 
-    echo "E2E stage: create Delay Hook on the same exact Chrome tab"
-    osascript -e 'tell application "Google Chrome" to activate'
-    perform_frontmost_selection 0.35 0.55 0.90
-    wait_for_creation_window >/dev/null
-    verify_real_creation_form
-    create_delay_hook_from_form
-    wait_for_creation_window_to_close
-    verify_menu_hook "1" "AwaitCue Chrome E2E Target"
+        echo "E2E stage: create Delay Hook on the same exact Chrome tab"
+        osascript -e 'tell application "Google Chrome" to activate'
+        perform_frontmost_selection 0.35 0.55 0.90
+        wait_for_creation_window >/dev/null
+        verify_real_creation_form
+        create_delay_hook_from_form
+        wait_for_creation_window_to_close
+        verify_menu_hook "1" "AwaitCue Chrome E2E Target"
 
-    echo "E2E stage: restart and restore Delay Hook"
-    restart_e2e_app
-    verify_menu_hook "1" "AwaitCue Chrome E2E Target"
-    click_menu_action "awaitcue.menu.cancel-hook"
-    sleep 0.3
-    verify_menu_hook "0" ""
+        echo "E2E stage: restart and restore Delay Hook"
+        restart_e2e_app
+        verify_menu_hook "1" "AwaitCue Chrome E2E Target"
+        click_menu_action "awaitcue.menu.cancel-hook"
+        sleep 0.3
+        verify_menu_hook "0" ""
+    fi
     chromium_status="passed"
 else
     if [[ "${require_chromium}" == true ]]; then
@@ -1309,4 +1333,8 @@ if [[ "${require_chromium}" == true && "${chromium_status}" != "passed" ]]; then
     exit 16
 fi
 
-echo "macOS live E2E passed: settings, Calculator selection, Chrome Condition DOM/restart/stability, and Delay create/restart/cancel; Chromium=${chromium_status}."
+if [[ "${AWAITCUE_E2E_SKIP_CHROMIUM_REPAIR:-0}" == "1" ]]; then
+    echo "macOS live E2E passed: existing Chrome installation connected and opened the real Hook form without repair; Chromium=${chromium_status}."
+else
+    echo "macOS live E2E passed: settings, Calculator selection, Chrome Condition DOM/restart/stability, and Delay create/restart/cancel; Chromium=${chromium_status}."
+fi

@@ -107,6 +107,15 @@ For final local acceptance, require the installed Chromium extension instead of 
 ./Scripts/run-macos-e2e.sh --live --require-chromium
 ```
 
+Verify the already-installed user path without repairing the Native Messaging manifest or manually reloading the extension. This starts Chrome before AwaitCue and requires a real selection to open the Hook form:
+
+```bash
+VERSION=0.2.3 \
+AWAITCUE_E2E_SKIP_CHROMIUM_REPAIR=1 \
+AWAITCUE_E2E_CHROME_ONLY=1 \
+./Scripts/run-macos-e2e.sh --live --require-chromium
+```
+
 Validate Native Messaging installation independently on temporary Chrome-profile directories, including repeated installation, ID replacement, invalid IDs, executable paths with spaces, JSON validity, and `0600` permissions:
 
 ```bash
@@ -131,6 +140,8 @@ AWAITCUE_CHROME_EXTENSION_ID=<chrome-id> \
 AWAITCUE_ARC_EXTENSION_ID=<arc-id> \
 ./Scripts/install-native-host.sh /Applications/AwaitCue.app
 ```
+
+The installer canonicalizes relative App arguments such as `dist/AwaitCue.app` before writing the manifest because Chrome requires an absolute Native Host executable path.
 
 The macOS settings window also links to the latest GitHub Release and opens the extension-management page of an installed Chrome, Edge, Arc, or Chromium app. Silent extension installation is not available to ordinary macOS apps; the user must confirm installation through the browser or load the unpacked release while the store listing is pending.
 

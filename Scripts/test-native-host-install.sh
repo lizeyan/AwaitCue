@@ -3,11 +3,24 @@
 set -euo pipefail
 
 readonly repository_root="$(cd "$(dirname "$0")/.." && pwd)"
-readonly temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/awaitcue-native-host-install.XXXXXX")"
+readonly temporary_parent="${TMPDIR:-/tmp}"
+readonly temporary_root="$(mktemp -d "${temporary_parent%/}/awaitcue-native-host-install.XXXXXX")"
 readonly fixture_app="${temporary_root}/AwaitCue Test.app"
-readonly host_executable="${fixture_app}/Contents/MacOS/AwaitCueNativeHost"
+readonly host_executable="$(/usr/bin/python3 - "${fixture_app}/Contents/MacOS/AwaitCueNativeHost" <<'PY'
+import os
+import sys
+
+print(os.path.realpath(sys.argv[1]))
+PY
+)"
 readonly escaped_fixture_app="${temporary_root}/AwaitCue \"Quoted\"\\Test.app"
-readonly escaped_host_executable="${escaped_fixture_app}/Contents/MacOS/AwaitCueNativeHost"
+readonly escaped_host_executable="$(/usr/bin/python3 - "${escaped_fixture_app}/Contents/MacOS/AwaitCueNativeHost" <<'PY'
+import os
+import sys
+
+print(os.path.realpath(sys.argv[1]))
+PY
+)"
 readonly first_manifest_directory="${temporary_root}/Chrome Profile A/NativeMessagingHosts"
 readonly second_manifest_directory="${temporary_root}/Chrome Profile B/NativeMessagingHosts"
 readonly manifest_name="org.awaitcue.native.json"
@@ -51,6 +64,15 @@ install_fixture "${second_extension_id}"
 readonly first_manifest="${first_manifest_directory}/${manifest_name}"
 test "$(jq -r '.allowed_origins[0]' "${first_manifest}")" \
     = "chrome-extension://${second_extension_id}/"
+
+# 用户常从仓库根目录传入 dist/AwaitCue.app；Chrome manifest 的 host path 仍必须是绝对路径。
+(
+    cd "${temporary_root}"
+    AWAITCUE_NATIVE_MESSAGING_DIRS="${first_manifest_directory}" \
+    AWAITCUE_EXTENSION_ID="${first_extension_id}" \
+        "${repository_root}/Scripts/install-native-host.sh" "AwaitCue Test.app"
+)
+test "$(jq -r '.path' "${first_manifest}")" = "${host_executable}"
 readonly manifest_hash_before_invalid="$(shasum -a 256 "${first_manifest}" | awk '{print $1}')"
 
 if AWAITCUE_NATIVE_MESSAGING_DIRS="${first_manifest_directory}" \
