@@ -51,8 +51,8 @@ request_decision() {
         | jq -r '.output[0].content[0].text | fromjson | .decision'
 }
 
-test "$(request_decision 'AWAITCUE_E2E_STATUS_PENDING')" = "notMatched"
-test "$(request_decision 'AWAITCUE_E2E_STATUS_COMPLETE')" = "matched"
+test "$(request_decision 'data-status:running')" = "notMatched"
+test "$(request_decision 'data-status:success')" = "matched"
 test "$(jq -s 'map(select(.name == "condition_evaluation")) | length' "${request_log}")" = "2"
 
 echo "Chrome E2E fixture and loopback Responses behavior passed."

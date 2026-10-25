@@ -180,49 +180,70 @@ launch_e2e_app() {
     e2e_app_pid="$!"
 }
 
+set_awaitcue_menu_visibility() {
+    local expected_visibility="$1"
+    swift - "${e2e_app_pid}" "${expected_visibility}" <<'SWIFT'
+import ApplicationServices
+import Darwin
+import Foundation
+
+let processID = pid_t(CommandLine.arguments[1])!
+let shouldBeVisible = CommandLine.arguments[2] == "visible"
+let application = AXUIElementCreateApplication(processID)
+
+func elements(_ element: AXUIElement, attribute: CFString) -> [AXUIElement] {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success else {
+        return []
+    }
+    return value as? [AXUIElement] ?? []
+}
+
+func text(_ element: AXUIElement, attribute: CFString) -> String? {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success else {
+        return nil
+    }
+    return value as? String
+}
+
+for _ in 0 ..< 600 {
+    guard kill(processID, 0) == 0 else { exit(2) }
+    let isVisible = !elements(application, attribute: kAXWindowsAttribute as CFString).isEmpty
+    if isVisible == shouldBeVisible { exit(0) }
+    let menuBars = elements(application, attribute: kAXChildrenAttribute as CFString)
+        .filter { text($0, attribute: kAXRoleAttribute as CFString) == kAXMenuBarRole as String }
+    let statusItem = menuBars.compactMap { menuBar -> AXUIElement? in
+        let items = elements(menuBar, attribute: kAXChildrenAttribute as CFString)
+            .filter { text($0, attribute: kAXRoleAttribute as CFString) == kAXMenuBarItemRole as String }
+        // MenuBarExtra 的状态栏独占一条 AXMenuBar；主应用菜单包含多个普通菜单项。
+        return items.count == 1 ? items[0] : nil
+    }.first
+    if let statusItem,
+       AXUIElementPerformAction(statusItem, kAXPressAction as CFString) == .success
+    {
+        for _ in 0 ..< 50 {
+            let updatedVisibility = !elements(
+                application,
+                attribute: kAXWindowsAttribute as CFString
+            ).isEmpty
+            if updatedVisibility == shouldBeVisible { exit(0) }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+    }
+    Thread.sleep(forTimeInterval: 0.1)
+}
+FileHandle.standardError.write(Data("AwaitCue status item did not reach the requested visibility\n".utf8))
+exit(1)
+SWIFT
+}
+
 open_awaitcue_menu() {
-    osascript <<'APPLESCRIPT'
-tell application "System Events"
-    repeat 600 times
-        if exists process "AwaitCue" then
-            tell process "AwaitCue"
-                set frontmost to true
-                set statusItem to missing value
-                set singleItemFallback to missing value
-                repeat with candidateBar in menu bars
-                    set itemCount to count of menu bar items of candidateBar
-                    repeat with candidateItem in menu bar items of candidateBar
-                        set isAwaitCueItem to false
-                        try
-                            if (name of candidateItem as text) contains "AwaitCue" then set isAwaitCueItem to true
-                        end try
-                        try
-                            if (description of candidateItem as text) contains "AwaitCue" then set isAwaitCueItem to true
-                        end try
-                        -- LSUIElement 的状态栏在部分 macOS 版本没有文字 label，但会单独占一条 menu bar。
-                        if itemCount is 1 and singleItemFallback is missing value then set singleItemFallback to candidateItem
-                        if isAwaitCueItem then
-                            set statusItem to candidateItem
-                            exit repeat
-                        end if
-                    end repeat
-                    if statusItem is not missing value then exit repeat
-                end repeat
-                if statusItem is missing value then set statusItem to singleItemFallback
-                if statusItem is not missing value then
-                    perform action "AXPress" of statusItem
-                    repeat 50 times
-                        if exists first window then return
-                        delay 0.1
-                    end repeat
-                end if
-            end tell
-        end if
-        delay 0.1
-    end repeat
-    error "AwaitCue status item is unavailable"
-end tell
-APPLESCRIPT
+    set_awaitcue_menu_visibility visible
+}
+
+close_awaitcue_menu() {
+    set_awaitcue_menu_visibility hidden
 }
 
 wait_for_e2e_app_ready() {
@@ -232,7 +253,7 @@ wait_for_e2e_app_ready() {
         sed -n '1,160p' "${log_path}" >&2 || true
         return 1
     fi
-    osascript -e 'tell application "System Events" to key code 53' >/dev/null 2>&1 || true
+    close_awaitcue_menu
 }
 
 launch_e2e_app
@@ -345,22 +366,25 @@ tell application "System Events"
     tell process "AwaitCue"
         set frontmost to true
         set menuWindow to first window
-        set allElements to entire contents of menuWindow
-        repeat with element in allElements
-            try
-                if role of element is "AXButton" and value of attribute "AXIdentifier" of element is "awaitcue.open-settings" then
-                    -- 只计算用户点击设置按钮后的展示耗时；展开菜单和 AX 遍历属于测试驱动开销。
-                    set startedAt to current date
-                    click element
-                    repeat 40 times
-                        if exists window "AwaitCue 设置" then
-                            return ((current date) - startedAt) as integer
-                        end if
-                        delay 0.05
-                    end repeat
-                    error "AwaitCue settings window did not appear"
-                end if
-            end try
+        repeat 50 times
+            set allElements to entire contents of menuWindow
+            repeat with element in allElements
+                try
+                    if role of element is "AXButton" and value of attribute "AXIdentifier" of element is "awaitcue.open-settings" then
+                        -- 只计算用户点击设置按钮后的展示耗时；展开菜单和 AX 遍历属于测试驱动开销。
+                        set startedAt to current date
+                        click element
+                        repeat 40 times
+                            if exists window "AwaitCue 设置" then
+                                return ((current date) - startedAt) as integer
+                            end if
+                            delay 0.05
+                        end repeat
+                        error "AwaitCue settings window did not appear"
+                    end if
+                end try
+            end repeat
+            delay 0.1
         end repeat
         error "AwaitCue settings button is unavailable"
     end tell
@@ -460,7 +484,53 @@ activate_fixture_app() {
     open -a Calculator
     swift - <<'SWIFT'
 import AppKit
+import ApplicationServices
+import CoreGraphics
 import Foundation
+
+guard let calculator = NSRunningApplication.runningApplications(
+    withBundleIdentifier: "com.apple.calculator"
+).first else {
+    exit(8)
+}
+calculator.activate()
+
+let application = AXUIElementCreateApplication(calculator.processIdentifier)
+var rawWindows: CFTypeRef?
+for _ in 0 ..< 30 {
+    if AXUIElementCopyAttributeValue(
+        application,
+        kAXWindowsAttribute as CFString,
+        &rawWindows
+    ) == .success,
+    let window = (rawWindows as? [AXUIElement])?.first
+    {
+        let display = CGDisplayBounds(CGMainDisplayID())
+        // 用户可能把 Calculator 留在跨显示器位置；真实框选测试先把 fixture
+        // 放进主显示器安全区域，不能把个人窗口布局冒充产品失败。
+        var position = CGPoint(x: display.minX + 100, y: display.minY + 100)
+        var size = CGSize(
+            width: min(420, display.width - 200),
+            height: min(560, display.height - 200)
+        )
+        if let positionValue = AXValueCreate(.cgPoint, &position),
+           let sizeValue = AXValueCreate(.cgSize, &size)
+        {
+            _ = AXUIElementSetAttributeValue(
+                window,
+                kAXPositionAttribute as CFString,
+                positionValue
+            )
+            _ = AXUIElementSetAttributeValue(
+                window,
+                kAXSizeAttribute as CFString,
+                sizeValue
+            )
+        }
+        break
+    }
+    Thread.sleep(forTimeInterval: 0.1)
+}
 
 for _ in 0 ..< 30 {
     if NSWorkspace.shared.frontmostApplication?.bundleIdentifier
@@ -475,11 +545,18 @@ SWIFT
 }
 
 perform_frontmost_selection() {
-    swift - <<'SWIFT'
+    local top_fraction="${1:-0.20}"
+    local left_fraction="${2:-0.15}"
+    local right_fraction="${3:-0.85}"
+    swift - "${top_fraction}" "${left_fraction}" "${right_fraction}" <<'SWIFT'
 import AppKit
 import CoreGraphics
 import Foundation
 
+guard let topFraction = Double(CommandLine.arguments[1]),
+      let leftFraction = Double(CommandLine.arguments[2]),
+      let rightFraction = Double(CommandLine.arguments[3])
+else { exit(12) }
 var entry: [String: Any]?
 for _ in 0 ..< 50 {
     if let processIdentifier = NSWorkspace.shared.frontmostApplication?.processIdentifier {
@@ -532,8 +609,8 @@ for _ in 0 ..< 5 {
 guard overlayIsVisible else { exit(9) }
 Thread.sleep(forTimeInterval: 0.1)
 
-let start = CGPoint(x: x + width * 0.15, y: y + height * 0.20)
-let end = CGPoint(x: x + width * 0.85, y: y + height * 0.75)
+let start = CGPoint(x: x + width * leftFraction, y: y + height * topFraction)
+let end = CGPoint(x: x + width * rightFraction, y: y + height * 0.75)
 func overlayVisible() -> Bool {
     let windows = CGWindowListCopyWindowInfo(
         [.optionOnScreenOnly, .excludeDesktopElements],
@@ -695,7 +772,9 @@ verify_real_creation_form() {
     osascript <<'APPLESCRIPT'
 tell application "System Events"
     tell process "AwaitCue"
+        set frontmost to true
         set formWindow to window "创建 Hook"
+        perform action "AXRaise" of formWindow
         set allElements to entire contents of formWindow
         set seenIdentifiers to {}
         repeat with element in allElements
@@ -749,7 +828,9 @@ create_delay_hook_from_form() {
     osascript <<'APPLESCRIPT'
 tell application "System Events"
     tell process "AwaitCue"
+        set frontmost to true
         set formWindow to window "创建 Hook"
+        perform action "AXRaise" of formWindow
         set allElements to entire contents of formWindow
         repeat with element in allElements
             try
@@ -775,7 +856,115 @@ end tell
 APPLESCRIPT
 }
 
+set_condition_text_through_accessibility() {
+    local accessibility_diagnostic
+    if ! accessibility_diagnostic="$(swift - "${e2e_app_pid}" 2>&1 <<'SWIFT'
+import ApplicationServices
+import Foundation
+
+let application = AXUIElementCreateApplication(pid_t(CommandLine.arguments[1])!)
+let condition = "AWAITCUE_E2E_STATUS_COMPLETE"
+
+func elements(_ element: AXUIElement, attribute: CFString) -> [AXUIElement] {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success else {
+        return []
+    }
+    return value as? [AXUIElement] ?? []
+}
+
+func text(_ element: AXUIElement, attribute: CFString) -> String? {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success else {
+        return nil
+    }
+    return value as? String
+}
+
+func descendant(identifier: String) -> AXUIElement? {
+    var queue = elements(application, attribute: kAXChildrenAttribute as CFString)
+    var visited = 0
+    while !queue.isEmpty, visited < 2_000 {
+        let element = queue.removeFirst()
+        visited += 1
+        if text(element, attribute: kAXIdentifierAttribute as CFString) == identifier {
+            return element
+        }
+        queue.append(contentsOf: elements(element, attribute: kAXChildrenAttribute as CFString))
+    }
+    return nil
+}
+
+guard let identifiedField = descendant(identifier: "awaitcue.hook.condition") else {
+    FileHandle.standardError.write(Data("Condition AX element is missing\n".utf8))
+    exit(3)
+}
+var fieldCandidates = [identifiedField]
+var candidateIndex = 0
+while candidateIndex < fieldCandidates.count, fieldCandidates.count < 100 {
+    fieldCandidates.append(contentsOf: elements(
+        fieldCandidates[candidateIndex],
+        attribute: kAXChildrenAttribute as CFString
+    ))
+    candidateIndex += 1
+}
+let field = fieldCandidates.first { candidate in
+    var settable = DarwinBoolean(false)
+    return AXUIElementIsAttributeSettable(
+        candidate,
+        kAXValueAttribute as CFString,
+        &settable
+    ) == .success && settable.boolValue
+}
+guard let field else {
+    let role = text(identifiedField, attribute: kAXRoleAttribute as CFString) ?? "unknown"
+    FileHandle.standardError.write(Data("Condition AXValue is not settable; role=\(role)\n".utf8))
+    exit(4)
+}
+_ = AXUIElementSetAttributeValue(field, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+let setResult = AXUIElementSetAttributeValue(
+    field,
+    kAXValueAttribute as CFString,
+    condition as CFString
+)
+guard setResult == .success else {
+    FileHandle.standardError.write(Data("Condition AXValue write failed: \(setResult.rawValue)\n".utf8))
+    exit(5)
+}
+
+for _ in 0 ..< 50 {
+    if text(field, attribute: kAXValueAttribute as CFString) == condition,
+       let analyze = descendant(identifier: "awaitcue.hook.analyze")
+    {
+        var enabledValue: CFTypeRef?
+        if AXUIElementCopyAttributeValue(
+            analyze,
+            kAXEnabledAttribute as CFString,
+            &enabledValue
+        ) == .success,
+        (enabledValue as? NSNumber)?.boolValue == true
+        {
+            exit(0)
+        }
+    }
+    Thread.sleep(forTimeInterval: 0.1)
+}
+let actualValue = text(field, attribute: kAXValueAttribute as CFString) ?? "missing"
+let analyzeExists = descendant(identifier: "awaitcue.hook.analyze") != nil
+FileHandle.standardError.write(
+    Data("Condition did not enable analysis; value=\(actualValue), analyzeExists=\(analyzeExists)\n".utf8)
+)
+exit(6)
+SWIFT
+    )"
+    then
+        echo "FAIL: Condition accessibility input failed: ${accessibility_diagnostic}" >&2
+        return 1
+    fi
+}
+
 create_condition_hook_from_form() {
+    set_condition_text_through_accessibility
     osascript <<'APPLESCRIPT'
 tell application "System Events"
     tell process "AwaitCue"
@@ -793,9 +982,22 @@ tell application "System Events"
         if conditionField is missing value or analyzeButton is missing value then
             error "Condition controls are unavailable"
         end if
-        click conditionField
-        keystroke "AWAITCUE_E2E_STATUS_COMPLETE"
-        click analyzeButton
+        set analysisStarted to false
+        repeat 50 times
+            set allElements to entire contents of formWindow
+            repeat with element in allElements
+                try
+                    if value of attribute "AXIdentifier" of element is "awaitcue.hook.analyze" and enabled of element then
+                        click element
+                        set analysisStarted to true
+                        exit repeat
+                    end if
+                end try
+            end repeat
+            if analysisStarted then exit repeat
+            delay 0.1
+        end repeat
+        if not analysisStarted then error "Condition text did not enable analysis"
         repeat 200 times
             set allElements to entire contents of formWindow
             repeat with element in allElements
@@ -857,7 +1059,7 @@ mark_chromium_fixture_complete() {
 on run argv
     set targetWindowID to item 1 of argv as integer
     tell application "Google Chrome"
-        set result to execute active tab of window id targetWindowID javascript "(() => { if (typeof window.awaitCueMarkComplete !== 'function') return 'missing'; window.awaitCueMarkComplete(); return document.querySelector('#status-text')?.textContent ?? 'missing'; })()"
+        set result to execute active tab of window id targetWindowID javascript "(() => { const status=document.querySelector('#deployment-status'); const text=document.querySelector('#status-text'); if(!status || !text) return 'missing'; status.dataset.state='complete'; status.dataset.status='success'; status.setAttribute('aria-label','部署状态：完成'); text.textContent='AWAITCUE_E2E_STATUS_COMPLETE'; return text.textContent; })()"
         if result is not "AWAITCUE_E2E_STATUS_COMPLETE" then error "fixture mutation failed: " & result
     end tell
 end run
@@ -875,27 +1077,31 @@ on run argv
     tell application "System Events"
         tell process "AwaitCue"
             set frontmost to true
-            set allElements to entire contents of first window
             set countValue to missing value
-            set titleFound to false
-            repeat with element in allElements
-                try
-                    set identifier to value of attribute "AXIdentifier" of element
-                    if identifier is "awaitcue.menu.hook-count" then set countValue to value of element
-                    if identifier is "awaitcue.menu.hook-title" and value of element is expectedTitle then set titleFound to true
-                end try
-            end repeat
-            if (countValue as text) is not expectedCount then
-                error "unexpected Hook count: " & countValue
-            end if
-            if expectedTitle is not "" and not titleFound then
-                error "expected Hook title is missing: " & expectedTitle
-            end if
-            key code 53
-            repeat 30 times
-                if not (exists first window) then exit repeat
+            repeat 50 times
+                set allElements to entire contents of first window
+                set countValue to missing value
+                set titleFound to false
+                repeat with element in allElements
+                    try
+                        set identifier to value of attribute "AXIdentifier" of element
+                        if identifier is "awaitcue.menu.hook-count" then set countValue to value of element
+                        if identifier is "awaitcue.menu.hook-title" and value of element is expectedTitle then set titleFound to true
+                    end try
+                end repeat
+                if countValue is not missing value then
+                    if (countValue as text) is expectedCount and (expectedTitle is "" or titleFound) then
+                        key code 53
+                        repeat 30 times
+                            if not (exists first window) then exit repeat
+                            delay 0.1
+                        end repeat
+                        return
+                    end if
+                end if
                 delay 0.1
             end repeat
+            error "unexpected Hook menu state: count=" & countValue & ", title=" & expectedTitle
         end tell
     end tell
 end run
@@ -911,18 +1117,21 @@ on run argv
     tell application "System Events"
         tell process "AwaitCue"
             set frontmost to true
-            set allElements to entire contents of first window
-            repeat with element in allElements
-                try
-                    if value of attribute "AXIdentifier" of element is expectedIdentifier then
-                        click element
-                        delay 0.1
-                        try
-                            key code 53
-                        end try
-                        return
-                    end if
-                end try
+            repeat 50 times
+                set allElements to entire contents of first window
+                repeat with element in allElements
+                    try
+                        if value of attribute "AXIdentifier" of element is expectedIdentifier then
+                            click element
+                            delay 0.1
+                            try
+                                key code 53
+                            end try
+                            return
+                        end if
+                    end try
+                end repeat
+                delay 0.1
             end repeat
             error "menu action is unavailable: " & expectedIdentifier
         end tell
@@ -965,10 +1174,28 @@ fi
 chromium_status="skipped"
 echo "E2E stage: Chromium selection and Hook lifecycle"
 readonly chromium_fixture_url="http://127.0.0.1:${fixture_port}/index.html"
-chromium_window_id="$(osascript - "${chromium_fixture_url}" <<'APPLESCRIPT' 2>/dev/null || true
+readonly chromium_window_left="$((80 + fixture_port % 7 * 23))"
+readonly chromium_window_top="$((80 + fixture_port % 5 * 19))"
+readonly chromium_window_width="$((1000 + fixture_port % 4 * 37))"
+readonly chromium_window_height="$((800 + fixture_port % 3 * 29))"
+readonly chromium_window_right="$((chromium_window_left + chromium_window_width))"
+readonly chromium_window_bottom="$((chromium_window_top + chromium_window_height))"
+chromium_window_id="$(osascript - \
+    "${chromium_fixture_url}" \
+    "${chromium_window_left}" \
+    "${chromium_window_top}" \
+    "${chromium_window_right}" \
+    "${chromium_window_bottom}" <<'APPLESCRIPT' 2>/dev/null || true
 on run argv
     tell application "Google Chrome"
         set testWindow to make new window
+        -- 每轮使用不同但安全的主屏 bounds，避免与用户窗口或异常退出的旧测试窗口身份冲突。
+        set bounds of testWindow to {¬
+            item 2 of argv as integer, ¬
+            item 3 of argv as integer, ¬
+            item 4 of argv as integer, ¬
+            item 5 of argv as integer¬
+        }
         set URL of active tab of testWindow to item 1 of argv
         set index of testWindow to 1
         activate
@@ -1015,7 +1242,7 @@ for _ in 0 ..< 50 {
 }
 exit(10)
 SWIFT
-    perform_frontmost_selection
+    perform_frontmost_selection 0.35 0.55 0.90
     wait_for_creation_window >/dev/null
     verify_real_creation_form
     if [[ -n "${AWAITCUE_E2E_CAPTURE_PATH:-}" ]]; then
@@ -1026,18 +1253,18 @@ SWIFT
     wait_for_creation_window_to_close
     wait_for_model_requests \
         "condition_evaluation" \
-        "AWAITCUE_E2E_STATUS_PENDING" \
+        "data-status:running" \
         1
     verify_menu_hook "1" "AwaitCue Chrome E2E Target"
 
     echo "E2E stage: restart while Condition is still observing"
     pending_before_restart="$(model_request_count \
         "condition_evaluation" \
-        "AWAITCUE_E2E_STATUS_PENDING")"
+        "data-status:running")"
     restart_e2e_app
     wait_for_model_requests \
         "condition_evaluation" \
-        "AWAITCUE_E2E_STATUS_PENDING" \
+        "data-status:running" \
         "$((pending_before_restart + 1))"
 
     echo "E2E stage: mutate DOM and wait for two stable matched decisions"
@@ -1045,7 +1272,7 @@ SWIFT
     mark_chromium_fixture_complete
     wait_for_model_requests \
         "condition_evaluation" \
-        "AWAITCUE_E2E_STATUS_COMPLETE" \
+        "data-status:success" \
         2
     verify_menu_hook "1" "AwaitCue Chrome E2E Target"
     echo "E2E stage: cancel completed Condition observation"
@@ -1055,7 +1282,7 @@ SWIFT
 
     echo "E2E stage: create Delay Hook on the same exact Chrome tab"
     osascript -e 'tell application "Google Chrome" to activate'
-    perform_frontmost_selection
+    perform_frontmost_selection 0.35 0.55 0.90
     wait_for_creation_window >/dev/null
     verify_real_creation_form
     create_delay_hook_from_form

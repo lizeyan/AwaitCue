@@ -78,7 +78,7 @@ class AwaitCueE2EHandler(SimpleHTTPRequestHandler):
                 "confidence": 0.99,
             }
         if format_name == "condition_evaluation":
-            matched = "AWAITCUE_E2E_STATUS_COMPLETE" in input_text
+            matched = "data-status:success" in input_text
             return {
                 "decision": "matched" if matched else "notMatched",
                 "confidence": 0.99,
