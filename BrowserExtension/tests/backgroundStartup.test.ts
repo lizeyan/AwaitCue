@@ -151,6 +151,35 @@ describe("background service worker startup", () => {
     vi.useRealTimers();
   });
 
+  it("reconnects immediately when a page regains focus during native-host backoff", async () => {
+    vi.useFakeTimers();
+    const fixture = makeBackgroundFixture();
+    await import("../src/background");
+    const disconnect = fixture.nativePort.onDisconnect.listeners[0] as () => void;
+    const runtimeListener = fixture.runtimeMessages.listeners[0] as (
+      message: unknown,
+      sender: chrome.runtime.MessageSender
+    ) => void;
+
+    disconnect();
+    await Promise.resolve();
+    runtimeListener({
+      type: "awaitcue.focusedTab",
+      windowFrame: { x: 100, y: 100, width: 1_000, height: 800 }
+    }, {
+      tab: {
+        id: 7,
+        windowId: 9,
+        url: "https://build.example/job"
+      } as chrome.tabs.Tab
+    });
+
+    await vi.waitFor(() => expect(fixture.connectNative).toHaveBeenCalledTimes(2));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fixture.connectNative).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
   it("backs off consecutive native-host failures until the current port receives a message", async () => {
     vi.useFakeTimers();
     const fixture = makeBackgroundFixture();
