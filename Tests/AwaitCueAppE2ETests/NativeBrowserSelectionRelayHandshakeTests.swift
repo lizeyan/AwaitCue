@@ -446,6 +446,112 @@ struct NativeBrowserSelectionRelayHandshakeTests {
         #expect(try await recorder.waitForValue() == .unavailable(.windowNotMatched))
     }
 
+    @Test("横向扩大标记从框选结果持久化到目标并传回绑定命令")
+    func expandedSelectionRegionFlowsFromResolutionToBinding() async throws {
+        let fixture = try await RelayHandshakeFixture()
+        defer { fixture.stop() }
+        try await fixture.verifyConnection()
+        let selection = ResolvedWindowSelection(
+            window: DiscoveredWindow(
+                applicationBundleIdentifier: "com.google.Chrome",
+                applicationName: "Google Chrome",
+                windowIdentifier: 42,
+                title: "Example",
+                frame: CGRect(x: 100, y: 100, width: 1_000, height: 700)
+            ),
+            screenCaptureRect: CGRect(x: 200, y: 250, width: 300, height: 200),
+            normalizedRegion: NormalizedRegion(x: 0.1, y: 0.2, width: 0.3, height: 0.3)
+        )
+        let recorder = BrowserResolutionRecorder()
+        Task {
+            let result = try? await fixture.relay.resolveBrowserTarget(for: selection)
+            await recorder.record(result)
+        }
+        let resolve = try #require(await fixture.nextAppCommand())
+        try await fixture.sendBrowserEvent([
+            "type": "selectionResolved",
+            "requestID": try #require(resolve["requestID"] as? String),
+            "matched": true,
+            "browserBundleIdentifier": "com.google.Chrome",
+            "target": [
+                "extensionInstallationID": "installation-1",
+                "tabID": 7,
+                "host": "example.com",
+                "url": "https://example.com/build",
+                "title": "Build",
+                "region": ["x": 0.1, "y": 0.2, "width": 0.6, "height": 0.3],
+                "selectionRegionExpanded": true,
+            ],
+        ])
+        let resolution = try await recorder.waitForValue()
+        guard case let .resolved(target) = resolution else {
+            Issue.record("框选结果没有解析为浏览器目标")
+            return
+        }
+        #expect(target.selectionRegionExpanded)
+
+        let hookID = HookID(rawValue: UUID())
+        let completion = OperationCompletionRecorder()
+        Task {
+            let succeeded = (try? await fixture.relay.bind(hookID: hookID, target: target)) != nil
+            await completion.record(succeeded)
+        }
+        let bind = try #require(await fixture.nextAppCommand())
+        #expect(bind["type"] as? String == "bindTarget")
+        #expect(bind["selectionRegionExpanded"] as? Bool == true)
+        try await fixture.sendBrowserEvent([
+            "type": "targetBound",
+            "requestID": try #require(bind["requestID"] as? String),
+            "extensionInstallationID": target.extensionInstallationID,
+            "browserBundleIdentifier": target.browserBundleIdentifier,
+            "hookID": hookID.rawValue.uuidString,
+            "tabID": target.tabIdentifier,
+        ])
+        #expect(try await completion.waitForValue())
+    }
+
+    @Test("横向扩大范围的页面证据明确约束模型处理相邻内容")
+    func expandedSelectionEvidenceAddsModelGuardrail() async throws {
+        let fixture = try await RelayHandshakeFixture()
+        defer { fixture.stop() }
+        try await fixture.verifyConnection()
+        let hookID = HookID(rawValue: UUID())
+        let target = BrowserTarget(
+            browserBundleIdentifier: "com.google.Chrome",
+            nativeWindowIdentifier: 42,
+            extensionInstallationID: "installation-1",
+            tabIdentifier: 7,
+            host: "example.com",
+            initialURL: URL(string: "https://example.com/build")!,
+            initialTitle: "Build",
+            normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1),
+            observationMode: .dom,
+            selectionRegionExpanded: true
+        )
+        try await fixture.bindAndAcknowledge(hookID: hookID, target: target)
+
+        try await fixture.sendBrowserEvent([
+            "type": "evidenceChanged",
+            "extensionInstallationID": "installation-1",
+            "browserBundleIdentifier": "com.google.Chrome",
+            "evidence": [
+                "hookID": hookID.rawValue.uuidString,
+                "title": "Build",
+                "url": "https://example.com/build",
+                "text": "[10,20] CN 全流量部署完成",
+                "aria": ["status: succeeded"],
+            ],
+        ])
+        try await Task.sleep(for: .milliseconds(30))
+
+        let domText = try await fixture.relay.evidence(for: hookID).domText ?? ""
+        #expect(domText.contains("浏览器侧栏导致读取范围横向扩大"))
+        #expect(domText.contains("可能包含用户原框选区域左右相邻的页面内容"))
+        #expect(domText.contains("才可判断 matched"))
+        #expect(domText.contains("证据冲突时必须判断 uncertain"))
+        #expect(domText.contains("并非用户原始选区坐标"))
+    }
+
     @Test("无语义页面只产生证据不足文字且绝不产生图片")
     func semanticEvidenceInsufficiencyDoesNotFallBackToImage() async throws {
         let fixture = try await RelayHandshakeFixture()

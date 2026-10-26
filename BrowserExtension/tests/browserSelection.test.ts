@@ -30,13 +30,13 @@ describe("browser selection mapping", () => {
     expect(normalizeSelectionToViewport({ x: 0, y: 0, width: 1, height: 1 }, { ...metrics, screenX: Number.NaN })).toBeNull();
     expect(
       normalizeSelectionToViewport(
-        { x: 500, y: 200, width: 100, height: 100 },
+        { x: 50, y: 200, width: 100, height: 100 },
         { ...metrics, innerWidth: 700 }
       )
     ).toBeNull();
   });
 
-  it("uses the selected edge to disambiguate a wide left or right browser sidebar", () => {
+  it("keeps a precise mapping when the selection reaches an outer window edge", () => {
     const metrics = {
       screenX: 100,
       screenY: 100,
@@ -46,31 +46,45 @@ describe("browser selection mapping", () => {
       innerHeight: 740
     };
 
+    const rightEdgeRegion = normalizeSelectionToViewport(
+      { x: 700, y: 250, width: 400, height: 200 },
+      metrics
+    );
+    expect(rightEdgeRegion?.x).toBeCloseTo(360 / 760);
+    expect(rightEdgeRegion?.y).toBeCloseTo(90 / 740);
+    expect(rightEdgeRegion?.width).toBeCloseTo(400 / 760);
+    expect(rightEdgeRegion?.height).toBeCloseTo(200 / 740);
     expect(
       normalizeSelectionToViewport(
-        { x: 700, y: 250, width: 300, height: 200 },
+        { x: 100, y: 250, width: 300, height: 200 },
         metrics
       )
     ).toEqual({
-      x: 360 / 760,
-      y: 90 / 740,
-      width: 300 / 760,
-      height: 200 / 740
-    });
-    expect(
-      normalizeSelectionToViewport(
-        { x: 150, y: 250, width: 300, height: 200 },
-        metrics
-      )
-    ).toEqual({
-      x: 50 / 760,
+      x: 0,
       y: 90 / 740,
       width: 300 / 760,
       height: 200 / 740
     });
   });
 
-  it("rejects a wide-sidebar selection when both viewport sides remain plausible", () => {
+  it("expands a partially disambiguated sidebar selection instead of guessing one side", () => {
+    const region = normalizeSelectionToViewport(
+      { x: 700, y: 250, width: 300, height: 200 },
+      {
+        screenX: 100,
+        screenY: 100,
+        outerWidth: 1_000,
+        outerHeight: 800,
+        innerWidth: 760,
+        innerHeight: 740
+      }
+    );
+
+    expect(region?.x).toBeCloseTo(360 / 760);
+    expect(region?.width).toBeCloseTo(400 / 760);
+  });
+
+  it("expands a wide-sidebar selection to cover every plausible page mapping", () => {
     const metrics = {
       screenX: 100,
       screenY: 100,
@@ -80,12 +94,97 @@ describe("browser selection mapping", () => {
       innerHeight: 740
     };
 
+    const region = normalizeSelectionToViewport(
+      { x: 450, y: 250, width: 200, height: 200 },
+      metrics
+    );
+    expect(region?.x).toBeCloseTo(110 / 760);
+    expect(region?.y).toBeCloseTo(90 / 740);
+    expect(region?.width).toBeCloseTo(440 / 760);
+    expect(region?.height).toBeCloseTo(200 / 740);
+  });
+
+  it("accepts a selection that only an intermediate left-right sidebar split can contain", () => {
+    const region = normalizeSelectionToViewport(
+      { x: 250, y: 250, width: 700, height: 200 },
+      {
+        screenX: 100,
+        screenY: 100,
+        outerWidth: 1_000,
+        outerHeight: 800,
+        innerWidth: 760,
+        innerHeight: 740
+      }
+    );
+
+    expect(region?.x).toBeCloseTo(0);
+    expect(region?.width).toBeCloseTo(1);
+  });
+
+  it("rejects a selection wider than every possible page viewport", () => {
     expect(
       normalizeSelectionToViewport(
-        { x: 450, y: 250, width: 200, height: 200 },
-        metrics
+        { x: 200, y: 250, width: 800, height: 200 },
+        {
+          screenX: 100,
+          screenY: 100,
+          outerWidth: 1_000,
+          outerHeight: 800,
+          innerWidth: 760,
+          innerHeight: 740
+        }
       )
     ).toBeNull();
+  });
+
+  it("keeps the conservative region normalized on a negative-origin display and extreme sidebars", () => {
+    const region = normalizeSelectionToViewport(
+      { x: -750, y: 250, width: 300, height: 200 },
+      {
+        screenX: -1_200,
+        screenY: 100,
+        outerWidth: 1_200,
+        outerHeight: 800,
+        innerWidth: 400,
+        innerHeight: 740
+      }
+    );
+
+    expect(region).not.toBeNull();
+    expect(region!.x).toBeGreaterThanOrEqual(0);
+    expect(region!.x + region!.width).toBeLessThanOrEqual(1);
+  });
+
+  it.each([
+    ["右侧栏", 0],
+    ["左右双侧栏", 120],
+    ["左侧栏", 240]
+  ])("accepts a webpage-middle selection with %s and covers its real DOM position", (_layout, actualViewportOffset) => {
+    const innerWidth = 760;
+    const actualDOMLeft = 300;
+    const selectionWidth = 200;
+    const region = normalizeSelectionToViewport(
+      {
+        x: 100 + actualViewportOffset + actualDOMLeft,
+        y: 250,
+        width: selectionWidth,
+        height: 200
+      },
+      {
+        screenX: 100,
+        screenY: 100,
+        outerWidth: 1_000,
+        outerHeight: 800,
+        innerWidth,
+        innerHeight: 740
+      }
+    );
+
+    expect(region).not.toBeNull();
+    expect(region!.x).toBeLessThanOrEqual(actualDOMLeft / innerWidth);
+    expect(region!.x + region!.width).toBeGreaterThanOrEqual(
+      (actualDOMLeft + selectionWidth) / innerWidth
+    );
   });
 
   it("matches native and browser window bounds with a small system-border tolerance", () => {

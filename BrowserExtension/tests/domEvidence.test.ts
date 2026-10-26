@@ -33,7 +33,12 @@ describe("DOM evidence", () => {
   });
 
   it("collects only visible elements intersecting the selected region", () => {
-    const evidence = collectEvidence(document, "hook-1", { x: 0.05, y: 0.1, width: 0.4, height: 0.4 });
+    const evidence = collectEvidence(
+      document,
+      "hook-1",
+      { x: 0.05, y: 0.1, width: 0.4, height: 0.4 },
+      true
+    );
 
     expect(evidence.hookID).toBe("hook-1");
     expect(evidence.title).toBe("Build");
@@ -41,6 +46,7 @@ describe("DOM evidence", () => {
     expect(evidence.text).not.toContain("Secret outside region");
     expect(evidence.aria).toContain("aria-label:Build status");
     expect(evidence.availability).toBe("sufficient");
+    expect(evidence.selectionRegionExpanded).toBe(true);
     expect(evidence).not.toHaveProperty("imageDataURL");
     expect(evidence.fingerprint).toMatch(/^[0-9a-f]{8}$/);
   });
@@ -129,9 +135,17 @@ describe("DOM evidence", () => {
   it("emits only when the evidence fingerprint changes", async () => {
     vi.useFakeTimers();
     const onChange = vi.fn();
-    const observer = new EvidenceObserver(document, "hook", { x: 0, y: 0, width: 1, height: 1 }, onChange);
+    const observer = new EvidenceObserver(
+      document,
+      "hook",
+      { x: 0, y: 0, width: 1, height: 1 },
+      onChange,
+      true
+    );
 
-    observer.start();
+    const initialEvidence = observer.start();
+    expect(initialEvidence.selectionRegionExpanded).toBe(true);
+    expect(initialEvidence).not.toHaveProperty("imageDataURL");
     observer.check();
     expect(onChange).not.toHaveBeenCalled();
 
@@ -139,6 +153,8 @@ describe("DOM evidence", () => {
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(300);
     expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0]?.[0].selectionRegionExpanded).toBe(true);
+    expect(onChange.mock.calls[0]?.[0]).not.toHaveProperty("imageDataURL");
     observer.check();
     expect(onChange).toHaveBeenCalledTimes(1);
 

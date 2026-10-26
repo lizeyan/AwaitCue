@@ -96,33 +96,39 @@ export function normalizeSelectionToViewport(
 
   const horizontalDifference = Math.max(0, metrics.outerWidth - metrics.innerWidth);
   const hasWideAsymmetricChrome = horizontalDifference > 64;
-  const horizontalOffsets = hasWideAsymmetricChrome
-    ? [0, horizontalDifference]
-    : [horizontalDifference / 2];
   const borderInset = hasWideAsymmetricChrome ? 0 : horizontalDifference / 2;
   const verticalChrome = Math.max(0, metrics.outerHeight - metrics.innerHeight - borderInset);
   const selectionRight = selection.x + selection.width;
   const selectionBottom = selection.y + selection.height;
-  const matchingViewports = horizontalOffsets.map((horizontalOffset) => ({
-    x: metrics.screenX + horizontalOffset,
-    y: metrics.screenY + verticalChrome,
-    width: metrics.innerWidth,
-    height: metrics.innerHeight
-  })).filter((viewport) => (
-    selection.x >= viewport.x &&
-    selection.y >= viewport.y &&
-    selectionRight <= viewport.x + viewport.width &&
-    selectionBottom <= viewport.y + viewport.height
-  ));
-  // 浏览器没有 API 直接暴露宽侧栏在左还是右；只有选区本身能唯一排除一侧时才接受。
-  // 落在两个候选重叠区时继续拒绝，不能为了兼容垂直标签栏而猜测 DOM 坐标。
-  if (matchingViewports.length !== 1) return null;
-  const viewport = matchingViewports[0]!;
+  const viewportY = metrics.screenY + verticalChrome;
+  if (selection.y < viewportY || selectionBottom > viewportY + metrics.innerHeight) return null;
 
+  if (!hasWideAsymmetricChrome) {
+    const viewportX = metrics.screenX + horizontalDifference / 2;
+    if (selection.x < viewportX || selectionRight > viewportX + metrics.innerWidth) return null;
+    return {
+      x: (selection.x - viewportX) / metrics.innerWidth,
+      y: (selection.y - viewportY) / metrics.innerHeight,
+      width: selection.width / metrics.innerWidth,
+      height: selection.height / metrics.innerHeight
+    };
+  }
+
+  const relativeLeft = selection.x - metrics.screenX;
+  const relativeRight = selectionRight - metrics.screenX;
+  const minimumPossibleOffset = Math.max(0, relativeRight - metrics.innerWidth);
+  const maximumPossibleOffset = Math.min(horizontalDifference, relativeLeft);
+  if (minimumPossibleOffset > maximumPossibleOffset) return null;
+
+  // Chromium 只暴露浏览器 UI 占用的总宽度，不暴露左、右侧栏各自的宽度。
+  // 因此使用所有能容纳用户选区的 viewport 偏移，并返回其页面 DOM 映射的并集；
+  // 这个保守范围可能横向扩大，但始终限制在网页 viewport 内，不会读取浏览器 UI。
+  const left = (relativeLeft - maximumPossibleOffset) / metrics.innerWidth;
+  const right = (relativeRight - minimumPossibleOffset) / metrics.innerWidth;
   return {
-    x: (selection.x - viewport.x) / viewport.width,
-    y: (selection.y - viewport.y) / viewport.height,
-    width: selection.width / viewport.width,
-    height: selection.height / viewport.height
+    x: left,
+    y: (selection.y - viewportY) / metrics.innerHeight,
+    width: right - left,
+    height: selection.height / metrics.innerHeight
   };
 }

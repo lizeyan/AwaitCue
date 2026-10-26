@@ -87,6 +87,7 @@ describe("native protocol", () => {
         expectedHost: "example.com",
         expectedURL: "https://example.com/build",
         region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+        selectionRegionExpanded: true,
         requirePixels: true
       })
     ).toEqual({
@@ -97,7 +98,8 @@ describe("native protocol", () => {
       tabID: 7,
       expectedHost: "example.com",
       expectedURL: "https://example.com/build",
-      region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 }
+      region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+      selectionRegionExpanded: true
     });
   });
 
@@ -137,6 +139,17 @@ describe("native protocol", () => {
         requirePixels: false
       })
     ).toBeNull();
+    expect(parseNativeCommand({
+      type: "bindTarget",
+      requestID: "bind-invalid-expansion",
+      extensionInstallationID: "installation-1",
+      hookID: "hook-1",
+      tabID: 7,
+      expectedHost: "example.com",
+      expectedURL: "https://example.com/build",
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      selectionRegionExpanded: "yes"
+    })).toBeNull();
     expect(isNormalizedRegion({ x: 0.8, y: 0.8, width: 0.5, height: 0.5 })).toBe(false);
     expect(isNormalizedRegion({ x: Number.NaN, y: 0, width: 1, height: 1 })).toBe(false);
     expect(isNormalizedRegion("region")).toBe(false);

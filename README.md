@@ -12,7 +12,7 @@ AwaitCue is in active early development. The repository currently focuses on pro
 
 ## Core ideas
 
-- **Condition Hook** — watch a selected region until a natural-language condition is satisfied.
+- **Condition Hook** — watch the page or App content mapped from a selected region until a natural-language condition is satisfied.
 - **Delay Hook** — wait at least a chosen duration before the target may return to your attention.
 - **Interruption-aware delivery** — notification delivery waits until the current screen context is appropriate to interrupt.
 - **Explicit targets** — every Hook is bound to a selected app window or a specific Safari/Chromium tab.
@@ -157,7 +157,7 @@ Submission requirements, permission justifications, listing copy, and remaining 
 
 Unpacked extension IDs can differ by browser and profile, so the installer accepts a separate ID for Chrome, Edge, Chromium, and Arc. The native host only relays messages while the AwaitCue menu bar app is running and has published a private loopback token.
 
-Chrome vertical tabs and other wide sidebars are supported when the selected rectangle itself uniquely proves whether the page viewport is on the left or right; selections in the ambiguous overlap are still rejected instead of guessed. Arc support remains experimental, and docked DevTools or layouts whose viewport origin cannot be uniquely established continue to fail safely. Chrome remains the reference browser for the current release.
+Chrome vertical tabs and left and/or right browser sidebars can make the page viewport's exact horizontal origin unavailable to an extension. AwaitCue no longer rejects those selections solely because the origin is ambiguous. Instead, it expands the page DOM range horizontally to the smallest range that covers every possible mapping of the selected rectangle. This may include page content immediately to the left or right of the rectangle, but it never reads the address bar, tab strip, bookmarks bar, browser sidebar, or a browser screenshot. The creation window discloses the expansion, and the model is instructed to return `uncertain` when the expanded evidence conflicts. Arc support remains experimental, and Chrome remains the reference browser for the current release.
 
 The protected `master` branch requires every PR check to pass. Testable Swift library seams and shared TypeScript business modules are each required to remain at or above 90% coverage. `coverage/swift.lcov` is that core gate; `coverage/swift-all.lcov` additionally includes `AwaitCueApp`, SwiftUI, AppKit, TCC, and system adapters so UI/wiring gaps remain visible instead of being hidden behind the core number. User-facing App behavior is required to pass the AppKit tests plus the permission-gated real-process smoke above. Required CI still builds the complete app bundle; Safari remains outside the current local-App/Chrome acceptance scope until Apple signing is available.
 
@@ -189,7 +189,7 @@ Read [docs/security-and-privacy.md](docs/security-and-privacy.md) for the detail
 
 ## 中文简介
 
-AwaitCue（候场）是一个开源 macOS 菜单栏应用。你可以在应用窗口、Safari 标签页或 Chromium 标签页中框选一个区域，创建条件 Hook 或延迟 Hook。浏览器 Target 只读取页面文字、ARIA 和状态属性，不上传浏览器截图。AwaitCue 负责观察目标，并且只在目标已经值得重新关注、同时你适合被打断时通知你。
+AwaitCue（候场）是一个开源 macOS 菜单栏应用。你可以在应用窗口、Safari 标签页或 Chromium 标签页中框选一个区域，创建条件 Hook 或延迟 Hook。浏览器 Target 只读取页面文字、ARIA 和状态属性，不上传浏览器截图；当浏览器左右侧栏导致网页横向原点无法精确确定时，AwaitCue 会把网页 DOM 读取范围横向扩大到覆盖所有可能映射，因此可能包含框选区域左右相邻的页面内容。AwaitCue 负责观察目标，并且只在目标已经值得重新关注、同时你适合被打断时通知你。
 
 它不是严格到点的倒计时，也不会在菜单栏应用退出后继续监控屏幕。
 

@@ -10,7 +10,7 @@ HTTP library, or model implementation produced the answer.
 
 ## Fixed sample set
 
-`benchmark.v1.json` contains 24 synthetic, non-sensitive cases. The evidence surface follows the
+`benchmark.v1.json` contains 25 synthetic, non-sensitive cases. The evidence surface follows the
 production path instead of creating a symmetric but artificial matrix:
 
 | Decision | Browser Target DOM-only | App Target image-only | Active-window screenshot + activity summary |
@@ -23,7 +23,7 @@ production path instead of creating a symmetric but artificial matrix:
 | Interruptibility uncertain | no | no | yes |
 
 Condition regression scenarios include overall failure with a locally successful target, duplicate
-same-name nodes with conflicting states, Condition text visible inside an input field, explicit
+same-name nodes with conflicting states, horizontally expanded browser evidence containing adjacent conflicting states, Condition text visible inside an input field, explicit
 failure, queued/running work, and missing status. Interruptibility scenarios include meetings,
 full-screen presentations, active document writing, production debugging, ordinary article reading,
 idle chat reading, and mixed-window focus that cannot be identified reliably. The browser Condition

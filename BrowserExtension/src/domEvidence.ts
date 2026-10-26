@@ -28,11 +28,12 @@ const mutationCoalescingMilliseconds = 300;
 
 type EvidenceRow = Readonly<{ x: number; y: number; text: string }>;
 
-/** 从框选区域内的 DOM 提取有限且稳定的文本证据。 */
+/** 从框选区域内的 DOM 提取有限且稳定的文本证据，并标明范围是否因侧栏歧义被扩大。 */
 export function collectEvidence(
   document: Document,
   hookID: string,
-  region: NormalizedRegion
+  region: NormalizedRegion,
+  selectionRegionExpanded = false
 ): Evidence {
   const pixelRegion = denormalizeRegion(region, document.documentElement.clientWidth, document.documentElement.clientHeight);
   const rows: EvidenceRow[] = [];
@@ -106,8 +107,9 @@ export function collectEvidence(
     aria: ariaValues,
     availability,
     ...(insufficiencyReason ? { insufficiencyReason } : {}),
+    selectionRegionExpanded,
     fingerprint: fingerprint(
-      `${document.location.href}\n${document.title}\n${availability}\n${text}\n${ariaValues.join("\n")}`
+      `${document.location.href}\n${document.title}\n${availability}\n${selectionRegionExpanded}\n${text}\n${ariaValues.join("\n")}`
     )
   };
 }
@@ -120,19 +122,32 @@ export class EvidenceObserver {
   readonly #hookID: string;
   readonly #region: NormalizedRegion;
   readonly #onChange: (evidence: Evidence) => void;
+  readonly #selectionRegionExpanded: boolean;
   #observer: MutationObserver | null = null;
   #pendingCheck: ReturnType<typeof setTimeout> | null = null;
   #lastFingerprint: string | null = null;
 
-  constructor(document: Document, hookID: string, region: NormalizedRegion, onChange: (evidence: Evidence) => void) {
+  constructor(
+    document: Document,
+    hookID: string,
+    region: NormalizedRegion,
+    onChange: (evidence: Evidence) => void,
+    selectionRegionExpanded = false
+  ) {
     this.#document = document;
     this.#hookID = hookID;
     this.#region = region;
     this.#onChange = onChange;
+    this.#selectionRegionExpanded = selectionRegionExpanded;
   }
 
   start(): Evidence {
-    const initial = collectEvidence(this.#document, this.#hookID, this.#region);
+    const initial = collectEvidence(
+      this.#document,
+      this.#hookID,
+      this.#region,
+      this.#selectionRegionExpanded
+    );
     this.#lastFingerprint = initial.fingerprint;
     this.#observer = new MutationObserver(() => this.scheduleCheck());
     this.#observer.observe(this.#document.documentElement, {
@@ -155,7 +170,12 @@ export class EvidenceObserver {
   }
 
   check(): Evidence {
-    const evidence = collectEvidence(this.#document, this.#hookID, this.#region);
+    const evidence = collectEvidence(
+      this.#document,
+      this.#hookID,
+      this.#region,
+      this.#selectionRegionExpanded
+    );
     if (evidence.fingerprint !== this.#lastFingerprint) {
       this.#lastFingerprint = evidence.fingerprint;
       this.#onChange(evidence);

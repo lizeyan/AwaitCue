@@ -1,21 +1,23 @@
 # AwaitCue Privacy Policy
 
-Effective date: October 24, 2026
+Effective date: October 26, 2026
 
-AwaitCue is an open-source macOS menu bar app with Safari and Chromium browser extensions. Its single purpose is to observe a window or tab region explicitly selected by the user, decide when the user-defined Condition is satisfied, and wait for an appropriate moment before returning that Target to the user's attention.
+AwaitCue is an open-source macOS menu bar app with Safari and Chromium browser extensions. Its single purpose is to observe an App region or the page content mapped from a browser region explicitly selected by the user, decide when the user-defined Condition is satisfied, and wait for an appropriate moment before returning that Target to the user's attention.
 
 ## Information AwaitCue processes
 
 For a Target explicitly selected by the user, AwaitCue may process:
 
 - the selected Safari or Chromium tab's URL, hostname, and title;
-- text and semantic attributes rendered inside the selected page region;
+- text and semantic attributes from the page DOM range mapped from the selected region;
 - for ordinary macOS App Targets, a screenshot cropped to the selected window region;
 - the user's Condition and limited decision results;
 - the current visible screen context used to decide whether interruption is appropriate;
 - a random extension installation identifier used to distinguish browser profiles.
 
 Browser Targets are DOM-only. The Safari and Chromium extensions do not capture screenshots, tab video, canvas pixels, or image pixels. If a page exposes its state only through canvas or images and has no readable text, ARIA, or semantic status attributes, AwaitCue treats the evidence as insufficient instead of falling back to a screenshot.
+
+In Chromium layouts with left and/or right browser sidebars, the extension may be unable to determine the page viewport's exact horizontal origin. AwaitCue then expands the page DOM range horizontally to the smallest range covering every possible mapping of the selected rectangle. The resulting evidence may include page content immediately to the left or right of the rectangle. The creation window discloses this before the user confirms the Hook, and conflicting expanded evidence must produce an `uncertain` decision. This mapping never reads the address bar, tab strip, bookmarks bar, browser sidebar, or browser pixels because those surfaces are outside the page DOM.
 
 AwaitCue does not use browser cookie, password, form-submission, web-request, clipboard, precise-location, financial-account, health-record, advertising, or browsing-history APIs.
 
@@ -41,7 +43,7 @@ AwaitCue sends evidence only to that user-configured endpoint and sets `store: f
 
 ## Browser extension data transfer
 
-The Chromium extension sends selected-region page evidence only to the locally installed AwaitCue macOS companion through Chrome Native Messaging. The Safari Web Extension sends the same DOM-only evidence through its embedded native app extension and an authenticated loopback relay. Neither extension sends network requests to an AwaitCue-operated server. The macOS companion may then send the evidence to the model hostname configured and confirmed by the user.
+The Chromium extension sends the mapped page DOM evidence only to the locally installed AwaitCue macOS companion through Chrome Native Messaging. When Chromium sidebar geometry is ambiguous, that mapped range may be horizontally expanded as described above. The Safari Web Extension sends DOM-only evidence through its embedded native app extension and an authenticated loopback relay. Neither extension sends network requests to an AwaitCue-operated server. The macOS companion may then send the evidence to the model hostname configured and confirmed by the user.
 
 AwaitCue does not sell data or use it for advertising, credit decisions, profiling, or purposes unrelated to the Hook and interruption decisions described above.
 
@@ -53,7 +55,7 @@ Users can exclude configured app bundle identifiers and Safari/Chromium hosts fr
 
 ## Sensitive content
 
-A selected region may visibly contain source code, messages, credentials, financial information, health information, or other sensitive content. Users should not select sensitive regions unless their chosen model provider is permitted to receive that content.
+A selected region may visibly contain source code, messages, credentials, financial information, health information, or other sensitive content. In a Chromium layout with ambiguous sidebar geometry, the horizontally expanded DOM range may also include adjacent page content that was outside the visible rectangle. Users should not select a region when either it or nearby page content is sensitive unless their chosen model provider is permitted to receive that content.
 
 ## Chrome Web Store Limited Use
 

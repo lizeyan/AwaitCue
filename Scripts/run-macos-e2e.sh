@@ -787,7 +787,9 @@ SWIFT
 }
 
 verify_real_creation_form() {
-    osascript <<'APPLESCRIPT'
+    osascript - "${AWAITCUE_E2E_REQUIRE_EXPANDED_SELECTION:-0}" <<'APPLESCRIPT'
+on run argv
+set requireExpandedSelection to (item 1 of argv is "1")
 tell application "System Events"
     tell process "AwaitCue"
         set frontmost to true
@@ -811,6 +813,7 @@ tell application "System Events"
             "awaitcue.hook.analyze", ¬
             "awaitcue.hook.cancel"¬
         }
+        if requireExpandedSelection then set end of expectedIdentifiers to "awaitcue.hook.expanded-selection-warning"
         repeat with expectedIdentifier in expectedIdentifiers
             set expectedIdentifierText to expectedIdentifier as text
             set matched to false
@@ -839,6 +842,7 @@ tell application "System Events"
         end if
     end tell
 end tell
+end run
 APPLESCRIPT
 }
 
@@ -1260,7 +1264,9 @@ for _ in 0 ..< 50 {
 }
 exit(10)
 SWIFT
-    perform_frontmost_selection 0.35 0.55 0.90
+    # 中间选区在垂直标签栏或双侧栏布局下无法唯一反推出 viewport 左边缘；
+    # 真实 E2E 必须证明产品会打开创建窗口，而不是只覆盖贴右边缘的容易路径。
+    perform_frontmost_selection 0.35 0.35 0.70
     wait_for_creation_window >/dev/null
     verify_real_creation_form
     if [[ -n "${AWAITCUE_E2E_CAPTURE_PATH:-}" ]]; then
@@ -1305,7 +1311,7 @@ SWIFT
 
         echo "E2E stage: create Delay Hook on the same exact Chrome tab"
         osascript -e 'tell application "Google Chrome" to activate'
-        perform_frontmost_selection 0.35 0.55 0.90
+        perform_frontmost_selection 0.35 0.35 0.70
         wait_for_creation_window >/dev/null
         verify_real_creation_form
         create_delay_hook_from_form

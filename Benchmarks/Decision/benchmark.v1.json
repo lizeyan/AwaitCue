@@ -133,6 +133,16 @@
       "evidence": { "image": "fixtures/images/condition-duplicate.png" }
     },
     {
+      "id": "condition-browser-expanded-region-conflict",
+      "kind": "condition",
+      "expected": "uncertain",
+      "condition": "The production deployment is complete.",
+      "tags": ["browser", "dom-only", "uncertain", "scenario:expanded-region-conflict"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-expanded-region-conflict.txt"
+      }
+    },
+    {
       "id": "condition-browser-input-text-not-fact",
       "kind": "condition",
       "expected": "notMatched",

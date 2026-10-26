@@ -120,6 +120,61 @@ struct OpenAIResponsesClientTests {
         #expect(Set(schema["required"] as? [String] ?? []) == ["decision", "confidence"])
     }
 
+    @Test("横向扩大范围提示进入创建分析和运行判断的真实 Responses 请求")
+    func expandedSelectionGuidanceReachesBothConditionRequests() async throws {
+        let guidance = """
+        读取范围提示：浏览器侧栏导致读取范围横向扩大，可能包含用户原框选区域左右相邻的页面内容。只有目标状态能够唯一对应，或读取范围内相关证据一致时，才可判断 matched；证据冲突时必须判断 uncertain。
+        """
+        let preparationRecorder = RequestRecorder()
+        let preparationClient = OpenAIResponsesClient(
+            baseURL: URL(string: "https://model.example/v1")!,
+            apiKey: "test-key",
+            model: "decision-model",
+            session: makeStubbedSession { request in
+                preparationRecorder.record(request)
+                return try stubbedResponse(
+                    for: request,
+                    statusCode: 200,
+                    body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"目标部署完成\",\"requiredEvidence\":\"dom\",\"currentDecision\":\"uncertain\",\"confidence\":0.5}"}]}]}"#
+                )
+            }
+        )
+
+        _ = try await preparationClient.prepareCondition(
+            ConditionPreparationRequest(
+                originalText: "部署完成时提醒我",
+                evidence: ModelEvidence(domText: "\(guidance)\n[10,20] 部署成功\n[300,20] 部署运行中")
+            )
+        )
+        #expect(try requestInputText(preparationRecorder.request).contains(guidance))
+
+        let evaluationRecorder = RequestRecorder()
+        let evaluationClient = OpenAIResponsesClient(
+            baseURL: URL(string: "https://model.example/v1")!,
+            apiKey: "test-key",
+            model: "decision-model",
+            session: makeStubbedSession { request in
+                evaluationRecorder.record(request)
+                return try stubbedResponse(
+                    for: request,
+                    statusCode: 200,
+                    body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"decision\":\"uncertain\",\"confidence\":0.5}"}]}]}"#
+                )
+            }
+        )
+        _ = try await evaluationClient.evaluateCondition(
+            ConditionEvaluationRequest(
+                condition: ConditionDefinition(
+                    originalText: "部署完成时提醒我",
+                    confirmedSummary: "目标部署完成",
+                    requiredEvidence: .dom
+                ),
+                evidence: ModelEvidence(domText: guidance)
+            )
+        )
+        #expect(try requestInputText(evaluationRecorder.request).contains(guidance))
+    }
+
     @Test("完整 Responses endpoint 不会重复追加路径")
     func acceptsCompleteResponsesEndpoint() async throws {
         let recorder = RequestRecorder()
@@ -466,6 +521,15 @@ private func fixtureConditionRequest() -> ConditionEvaluationRequest {
         ),
         evidence: ModelEvidence(text: "Build complete")
     )
+}
+
+private func requestInputText(_ request: URLRequest?) throws -> String {
+    let request = try #require(request)
+    let bodyData = try #require(request.httpBody)
+    let body = try #require(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+    let input = try #require(body["input"] as? [[String: Any]])
+    let content = try #require(input.first?["content"] as? [[String: Any]])
+    return content.compactMap { $0["text"] as? String }.joined(separator: "\n")
 }
 
 private final class RequestRecorder: @unchecked Sendable {

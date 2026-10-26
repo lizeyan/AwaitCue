@@ -56,7 +56,7 @@ struct SQLiteHookRepositoryTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let databaseURL = directory.appendingPathComponent("hooks.sqlite")
-        let hook = makeDelayHook(
+        let hook = makeConditionHook(
             id: "00000000-0000-0000-0000-000000000103",
             title: "进程重启后恢复",
             createdAt: Date(timeIntervalSince1970: 3_000)
@@ -66,7 +66,13 @@ struct SQLiteHookRepositoryTests {
         try await writer.save(hook)
         let reader = try SQLiteHookRepository(databaseURL: databaseURL)
 
-        #expect(try await reader.loadHooks() == [hook])
+        let restored = try await reader.loadHooks()
+        #expect(restored == [hook])
+        guard case let .browser(browser) = restored.first?.target else {
+            Issue.record("重启恢复的 Hook 不是浏览器目标")
+            return
+        }
+        #expect(browser.selectionRegionExpanded)
     }
 
     @Test("数据库打开、建表和 Hook 编码失败使用明确错误")
@@ -132,7 +138,8 @@ private func makeConditionHook(id: String, title: String, createdAt: Date) -> Ho
                 initialURL: URL(string: "https://example.com/build")!,
                 initialTitle: "Build",
                 normalizedRegion: NormalizedRegion(x: 0.1, y: 0.2, width: 0.5, height: 0.4),
-                observationMode: .dom
+                observationMode: .dom,
+                selectionRegionExpanded: true
             )
         ),
         trigger: .condition(

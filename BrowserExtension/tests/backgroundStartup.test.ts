@@ -556,6 +556,7 @@ describe("background service worker startup", () => {
         text: "[10,20] Waiting",
         aria: ["class:status-pending"],
         availability: "sufficient",
+        selectionRegionExpanded: true,
         fingerprint: "12345678"
       }
     });
@@ -569,7 +570,8 @@ describe("background service worker startup", () => {
       tabID: 7,
       expectedHost: "build.example",
       expectedURL: "https://build.example/job",
-      region: { x: 0, y: 0, width: 1, height: 1 }
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      selectionRegionExpanded: true
     });
 
     await vi.waitFor(() => {
@@ -579,10 +581,21 @@ describe("background service worker startup", () => {
         evidence: expect.objectContaining({
           hookID: "hook-static",
           text: "[10,20] Waiting",
-          availability: "sufficient"
+          availability: "sufficient",
+          selectionRegionExpanded: true
         })
       });
     });
+    expect(fixture.tabsSendMessage).toHaveBeenCalledWith(7, {
+      type: "awaitcue.bind",
+      hookID: "hook-static",
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      selectionRegionExpanded: true
+    });
+    const evidenceEvent = fixture.nativePort.postMessage.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === "evidenceChanged");
+    expect(evidenceEvent?.evidence).not.toHaveProperty("imageDataURL");
   });
 
   it("forwards fresh initial evidence after the bound page reloads", async () => {
@@ -597,7 +610,8 @@ describe("background service worker startup", () => {
       tabID: 7,
       expectedHost: "build.example",
       expectedURL: "https://build.example/job",
-      region: { x: 0, y: 0, width: 1, height: 1 }
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      selectionRegionExpanded: true
     });
     await vi.waitFor(() => {
       expect(fixture.nativePort.postMessage).toHaveBeenCalledWith(
@@ -613,6 +627,7 @@ describe("background service worker startup", () => {
         text: "[10,20] Reloaded",
         aria: [],
         availability: "sufficient",
+        selectionRegionExpanded: true,
         fingerprint: "87654321"
       }
     });
@@ -633,9 +648,16 @@ describe("background service worker startup", () => {
         extensionInstallationID: "installation-1",
         evidence: expect.objectContaining({
           hookID: "hook-reload",
-          text: "[10,20] Reloaded"
+          text: "[10,20] Reloaded",
+          selectionRegionExpanded: true
         })
       });
+    });
+    expect(fixture.tabsSendMessage).toHaveBeenLastCalledWith(7, {
+      type: "awaitcue.bind",
+      hookID: "hook-reload",
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      selectionRegionExpanded: true
     });
   });
 
@@ -666,6 +688,24 @@ describe("background service worker startup", () => {
         })
       });
     });
+
+    fixture.nativePort.postMessage.mockClear();
+    listener({
+      type: "awaitcue.evidence",
+      evidence: {
+        hookID: "hook-invalid-expansion",
+        url: "https://build.example/job",
+        title: "Build",
+        text: "[10,20] Build succeeded",
+        aria: [],
+        selectionRegionExpanded: "yes",
+        fingerprint: "87654321"
+      }
+    });
+    await Promise.resolve();
+    expect(fixture.nativePort.postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "evidenceChanged" })
+    );
   });
 
   it("reports when no Chromium window matches the native frame", async () => {
@@ -746,6 +786,7 @@ describe("background service worker startup", () => {
     fixture.tabsSendMessage.mockResolvedValue({
       matched: true,
       region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+      selectionRegionExpanded: true,
       title: "Build",
       evidence: {
         hookID: "request-1",
@@ -754,6 +795,7 @@ describe("background service worker startup", () => {
         text: "[10,20] Build succeeded",
         aria: ["class:status-success"],
         availability: "sufficient",
+        selectionRegionExpanded: true,
         fingerprint: "12345678"
       }
     });
@@ -763,13 +805,40 @@ describe("background service worker startup", () => {
     expect(event).toMatchObject({
       matched: true,
       target: {
+        selectionRegionExpanded: true,
         evidence: {
           text: "[10,20] Build succeeded",
           aria: ["class:status-success"],
-          availability: "sufficient"
+          availability: "sufficient",
+          selectionRegionExpanded: true
         }
       }
     });
+    expect((event.target as Record<string, unknown>).evidence).not.toHaveProperty("imageDataURL");
+  });
+
+  it("rejects a non-boolean selection expansion marker from page responses", async () => {
+    const fixture = makeBackgroundFixture();
+    fixture.windowsGet.mockResolvedValue({
+      id: 5,
+      left: 100,
+      top: 50,
+      width: 1_200,
+      height: 800,
+    });
+    fixture.tabsQuery.mockResolvedValue([
+      { id: 7, windowId: 5, active: true, url: "https://build.example/job", title: "Build" }
+    ]);
+    fixture.tabsSendMessage.mockResolvedValue({
+      matched: true,
+      region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+      selectionRegionExpanded: "yes",
+      title: "Build"
+    });
+
+    const event = await resolveSelection(fixture);
+
+    expect(event).toMatchObject({ matched: false, reason: "invalid_page_response" });
   });
 
   it("keeps the request identity when page access fails", async () => {

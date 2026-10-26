@@ -17,6 +17,7 @@ type HookBinding = Readonly<{
   expectedHost: string;
   expectedURL: string;
   region: NormalizedRegion;
+  selectionRegionExpanded?: boolean;
 }>;
 const hookBindings = new Map<string, HookBinding>();
 let recentlyFocusedTab: Readonly<{
@@ -326,6 +327,9 @@ async function resolveSelection(command: Extract<NativeCommand, { type: "resolve
       url: tabURL,
       title: response.title || tab.title || url.host,
       region: response.region,
+      ...(typeof response.selectionRegionExpanded === "boolean"
+        ? { selectionRegionExpanded: response.selectionRegionExpanded }
+        : {}),
       ...(response.evidence ? { evidence: response.evidence } : {})
     }
   });
@@ -391,7 +395,10 @@ async function bind(command: Extract<NativeCommand, { type: "bindTarget" }>): Pr
     tabID: command.tabID,
     expectedHost: command.expectedHost,
     expectedURL: command.expectedURL,
-    region: command.region
+    region: command.region,
+    ...(typeof command.selectionRegionExpanded === "boolean"
+      ? { selectionRegionExpanded: command.selectionRegionExpanded }
+      : {})
   };
   const initialEvidence = await installContentBinding(command.hookID, binding);
   hookBindings.set(command.hookID, binding);
@@ -494,7 +501,10 @@ async function installContentBinding(hookID: string, binding: HookBinding): Prom
   const response: unknown = await chrome.tabs.sendMessage(binding.tabID, {
     type: "awaitcue.bind",
     hookID,
-    region: binding.region
+    region: binding.region,
+    ...(typeof binding.selectionRegionExpanded === "boolean"
+      ? { selectionRegionExpanded: binding.selectionRegionExpanded }
+      : {})
   });
   return isRecord(response) ? normalizeEvidence(response.evidence) : null;
 }
@@ -538,6 +548,7 @@ function normalizeEvidence(value: unknown): Evidence | null {
     typeof value.text !== "string" ||
     !Array.isArray(value.aria) ||
     !value.aria.every((entry) => typeof entry === "string") ||
+    !(value.selectionRegionExpanded === undefined || typeof value.selectionRegionExpanded === "boolean") ||
     typeof value.fingerprint !== "string"
   ) {
     return null;
@@ -553,6 +564,9 @@ function normalizeEvidence(value: unknown): Evidence | null {
     aria: value.aria,
     availability,
     ...(insufficiencyReason ? { insufficiencyReason } : {}),
+    ...(typeof value.selectionRegionExpanded === "boolean"
+      ? { selectionRegionExpanded: value.selectionRegionExpanded }
+      : {}),
     fingerprint: value.fingerprint
   };
 }
@@ -560,6 +574,7 @@ function normalizeEvidence(value: unknown): Evidence | null {
 function normalizeResolvedSelectionResponse(value: unknown): {
   matched: boolean;
   region?: NormalizedRegion;
+  selectionRegionExpanded?: boolean;
   title: string;
   evidence?: Evidence;
 } | null {
@@ -567,6 +582,7 @@ function normalizeResolvedSelectionResponse(value: unknown): {
     !isRecord(value) ||
     typeof value.matched !== "boolean" ||
     typeof value.title !== "string" ||
+    !(value.selectionRegionExpanded === undefined || typeof value.selectionRegionExpanded === "boolean") ||
     !(value.region === null || value.region === undefined || isNormalizedRegion(value.region))
   ) {
     return null;
@@ -578,6 +594,9 @@ function normalizeResolvedSelectionResponse(value: unknown): {
   return {
     matched: value.matched,
     ...(isNormalizedRegion(value.region) ? { region: value.region } : {}),
+    ...(typeof value.selectionRegionExpanded === "boolean"
+      ? { selectionRegionExpanded: value.selectionRegionExpanded }
+      : {}),
     title: value.title,
     ...(evidence ? { evidence } : {})
   };

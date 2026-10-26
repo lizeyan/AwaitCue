@@ -2,6 +2,8 @@ import AwaitCueCore
 import SwiftUI
 
 struct HookCreationView: View {
+    static let expandedSelectionWarning = "浏览器侧栏使页面读取范围横向扩大，可能包含原框选区域左右相邻的页面内容。请确认模型理解只对应目标状态；内容冲突时应显示“当前无法确定”。"
+
     private enum HookKind: String, CaseIterable, Identifiable {
         case condition = "条件满足时"
         case delay = "至少等待一段时间"
@@ -42,6 +44,13 @@ struct HookCreationView: View {
                 TextField("例如：编译成功或失败时", text: $conditionText, axis: .vertical)
                     .lineLimit(3 ... 6)
                     .accessibilityIdentifier("awaitcue.hook.condition")
+                if showsExpandedSelectionWarning {
+                    Label(Self.expandedSelectionWarning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("awaitcue.hook.expanded-selection-warning")
+                }
                 if model.modelStatus != .connected {
                     Label("条件 Hook 需要先在设置中测试并保存支持图片输入的决策模型。", systemImage: "exclamationmark.triangle")
                         .font(.caption)
@@ -130,6 +139,11 @@ struct HookCreationView: View {
     private var targetIcon: String {
         if case .browser = model.pendingTarget { return "globe" }
         return "macwindow"
+    }
+
+    var showsExpandedSelectionWarning: Bool {
+        guard case let .browser(browser) = model.pendingTarget else { return false }
+        return browser.selectionRegionExpanded
     }
 
     @MainActor

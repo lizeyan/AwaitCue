@@ -13,10 +13,11 @@ test("canonical fixtures cover every decision and evidence surface without secre
   const source = await readFile(manifestPath, "utf8");
   assert.doesNotMatch(source, /(api[_-]?key|bearer\s+|bytedance\.net|aidp\.)/i);
   const manifest = validateBenchmarkManifest(JSON.parse(source), benchmarkDirectory);
-  assert.equal(manifest.cases.length, 24);
+  assert.equal(manifest.cases.length, 25);
   const requiredScenarios = new Set([
     "scenario:overall-failed-local-success",
     "scenario:duplicate-name-conflict",
+    "scenario:expanded-region-conflict",
     "scenario:condition-text-not-fact",
     "scenario:explicit-failure",
     "scenario:queued",

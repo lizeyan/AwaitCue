@@ -299,7 +299,8 @@ struct HookLifecycleEdgeCaseTests {
                 initialURL: URL(string: "https://example.com/build")!,
                 initialTitle: "Build",
                 normalizedRegion: NormalizedRegion(x: 0.2, y: 0.3, width: 0.4, height: 0.5),
-                observationMode: .dom
+                observationMode: .dom,
+                selectionRegionExpanded: true
             )
         )
 
@@ -308,6 +309,11 @@ struct HookLifecycleEdgeCaseTests {
 
         #expect(decoded == target)
         #expect(decoded.normalizedRegion == NormalizedRegion(x: 0.2, y: 0.3, width: 0.4, height: 0.5))
+        guard case let .browser(browser) = decoded else {
+            Issue.record("往返结果不是浏览器目标")
+            return
+        }
+        #expect(browser.selectionRegionExpanded)
     }
 
     private func makeCondition(now: Date) throws -> Hook {
