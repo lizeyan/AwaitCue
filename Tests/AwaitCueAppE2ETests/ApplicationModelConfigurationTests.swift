@@ -283,7 +283,7 @@ struct ApplicationModelConfigurationTests {
 
     private var preparedCondition: PreparedCondition {
         PreparedCondition(
-            confirmedSummary: "测试图片中的状态值得重新关注",
+            confirmedSummary: "当测试图片中的状态值得重新关注时",
             requiredEvidence: .image,
             currentDecision: .notMatched,
             confidence: 0.9

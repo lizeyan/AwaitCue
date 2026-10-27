@@ -72,13 +72,13 @@ class AwaitCueE2EHandler(SimpleHTTPRequestHandler):
     def _structured_output(format_name: str, input_text: str) -> dict[str, Any]:
         if format_name == "condition_preparation":
             return {
-                "confirmedSummary": "CN 全流量部署状态显示完成",
+                "confirmedSummary": "当 CN 全流量部署状态显示完成时",
                 "requiredEvidence": "dom",
                 "currentDecision": "notMatched",
                 "confidence": 0.99,
             }
         if format_name == "condition_evaluation":
-            matched = "data-status:success" in input_text
+            matched = 'data-status="success"' in input_text
             return {
                 "decision": "matched" if matched else "notMatched",
                 "confidence": 0.99,

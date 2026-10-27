@@ -187,24 +187,41 @@ struct HookCreationView: View {
     @ViewBuilder
     private var conditionPreview: some View {
         if let preview = model.conditionPreview {
-            GroupBox("模型理解") {
-                VStack(alignment: .leading, spacing: 6) {
+            GroupBox("分析结果") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("满足以下提醒条件时通知：")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text(preview.confirmedSummary)
+                        .accessibilityIdentifier("awaitcue.hook.condition-summary")
+                    Divider()
+                    Text("当前判断")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     HStack {
                         Label(decisionLabel(preview.currentDecision), systemImage: decisionIcon(preview.currentDecision))
+                            .accessibilityIdentifier("awaitcue.hook.current-decision")
                         Spacer()
-                        Text("置信度 \(Int(preview.confidence * 100))%")
+                        Text("判断置信度 \(Int(preview.confidence * 100))%")
                             .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("awaitcue.hook.decision-confidence")
                     }
                     .font(.caption)
                     if preview.currentDecision == .matched {
                         Text("当前已经满足。创建后仍会执行第二次稳定确认，不会立即通知。")
                             .font(.caption)
                             .foregroundStyle(.orange)
-                    } else if preview.currentDecision == .uncertain {
-                        Text("当前框选内容不足以可靠判断；可以调整条件，或重新框选更明确的区域。")
+                            .accessibilityIdentifier("awaitcue.hook.decision-explanation")
+                    } else if preview.currentDecision == .notMatched {
+                        Text("当前证据明确显示提醒条件尚未满足；创建后会继续观察。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("awaitcue.hook.decision-explanation")
+                    } else if preview.currentDecision == .uncertain {
+                        Text("当前证据不足或相互冲突；这不表示提醒条件已经满足。可以调整条件，或重新框选更明确的区域。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("awaitcue.hook.decision-explanation")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

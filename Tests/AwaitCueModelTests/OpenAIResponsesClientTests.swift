@@ -13,7 +13,7 @@ struct OpenAIResponsesClientTests {
             return try stubbedResponse(
                 for: request,
                 statusCode: 200,
-                body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"构建状态显示成功\",\"requiredEvidence\":\"domAndImage\",\"currentDecision\":\"notMatched\",\"confidence\":0.82}"}]}]}"#
+                body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"当构建状态显示成功时\",\"requiredEvidence\":\"domAndImage\",\"currentDecision\":\"notMatched\",\"confidence\":0.82}"}]}]}"#
             )
         }
         let client = OpenAIResponsesClient(
@@ -32,7 +32,7 @@ struct OpenAIResponsesClientTests {
 
         #expect(
             result == PreparedCondition(
-                confirmedSummary: "构建状态显示成功",
+                confirmedSummary: "当构建状态显示成功时",
                 requiredEvidence: .domAndImage,
                 currentDecision: .notMatched,
                 confidence: 0.82
@@ -45,10 +45,20 @@ struct OpenAIResponsesClientTests {
         #expect(reasoning["effort"] as? String == "none")
         let instructions = try #require(body["instructions"] as? String)
         #expect(instructions.contains("缺少状态不等于条件未满足"))
+        #expect(instructions.contains("confirmedSummary 只描述以后要观察的提醒条件"))
+        #expect(instructions.contains("currentDecision 才表示当前证据的判断"))
         let text = try #require(body["text"] as? [String: Any])
         let format = try #require(text["format"] as? [String: Any])
         #expect(format["name"] as? String == "condition_preparation")
         #expect(format["strict"] as? Bool == true)
+        let schema = try #require(format["schema"] as? [String: Any])
+        let properties = try #require(schema["properties"] as? [String: Any])
+        let summary = try #require(properties["confirmedSummary"] as? [String: Any])
+        let decision = try #require(properties["currentDecision"] as? [String: Any])
+        let confidence = try #require(properties["confidence"] as? [String: Any])
+        #expect((summary["description"] as? String)?.contains("提醒条件") == true)
+        #expect((decision["description"] as? String)?.contains("当前证据") == true)
+        #expect((confidence["description"] as? String)?.contains("currentDecision") == true)
     }
 
     @Test("条件判断发送图片、关闭服务端存储并使用严格 JSON Schema")
@@ -135,7 +145,7 @@ struct OpenAIResponsesClientTests {
                 return try stubbedResponse(
                     for: request,
                     statusCode: 200,
-                    body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"目标部署完成\",\"requiredEvidence\":\"dom\",\"currentDecision\":\"uncertain\",\"confidence\":0.5}"}]}]}"#
+                    body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"当目标部署完成时\",\"requiredEvidence\":\"dom\",\"currentDecision\":\"uncertain\",\"confidence\":0.5}"}]}]}"#
                 )
             }
         )
@@ -166,7 +176,7 @@ struct OpenAIResponsesClientTests {
             ConditionEvaluationRequest(
                 condition: ConditionDefinition(
                     originalText: "部署完成时提醒我",
-                    confirmedSummary: "目标部署完成",
+                    confirmedSummary: "当目标部署完成时",
                     requiredEvidence: .dom
                 ),
                 evidence: ModelEvidence(domText: guidance)

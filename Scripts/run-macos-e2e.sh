@@ -372,6 +372,10 @@ if [[ "${require_chromium}" == true ]]; then
             exit 19
         fi
         echo "E2E stage: using existing Chromium installation without manifest repair or extension reload"
+    elif [[ "${AWAITCUE_E2E_SKIP_EXTENSION_RELOAD:-0}" == "1" ]]; then
+        # 本轮已经在构建扩展后完整退出并重启 Chrome；再次点 reload 会制造无意义的第二次断连，
+        # 真实生命周期测试可以直接使用冷启动加载的当前 dist，同时继续执行全部 Hook 场景。
+        echo "E2E stage: using Chrome cold-started current extension without a second reload"
     else
         reload_current_chromium_extension
     fi
@@ -382,26 +386,27 @@ open_settings_from_menu_bar() {
     osascript <<'APPLESCRIPT'
 tell application "System Events"
     tell process "AwaitCue"
-        set frontmost to true
-        set menuWindow to first window
         repeat 50 times
-            set allElements to entire contents of menuWindow
-            repeat with element in allElements
-                try
-                    if role of element is "AXButton" and value of attribute "AXIdentifier" of element is "awaitcue.open-settings" then
-                        -- 只计算用户点击设置按钮后的展示耗时；展开菜单和 AX 遍历属于测试驱动开销。
-                        set startedAt to current date
-                        click element
-                        repeat 40 times
-                            if exists window "AwaitCue 设置" then
-                                return ((current date) - startedAt) as integer
-                            end if
-                            delay 0.05
-                        end repeat
-                        error "AwaitCue settings window did not appear"
-                    end if
-                end try
-            end repeat
+            if exists window 1 then
+                set menuWindow to first window
+                set allElements to entire contents of menuWindow
+                repeat with element in allElements
+                    try
+                        if role of element is "AXButton" and value of attribute "AXIdentifier" of element is "awaitcue.open-settings" then
+                            -- 激活 App 会关闭 MenuBarExtra；保持现有弹窗并直接执行按钮动作。
+                            set startedAt to current date
+                            click element
+                            repeat 40 times
+                                if exists window "AwaitCue 设置" then
+                                    return ((current date) - startedAt) as integer
+                                end if
+                                delay 0.05
+                            end repeat
+                            error "AwaitCue settings window did not appear"
+                        end if
+                    end try
+                end repeat
+            end if
             delay 0.1
         end repeat
         error "AwaitCue settings button is unavailable"
@@ -480,20 +485,24 @@ close_settings_window() {
         -e 'tell application "System Events" to keystroke "w" using command down'
 }
 
-echo "E2E stage: real menu settings"
-settings_duration="$(open_settings_from_menu_bar)" || {
-    echo "FAIL: settings could not be opened from the real menu action." >&2
-    exit 13
-}
-readonly settings_duration
-if (( settings_duration > 2 )); then
-    echo "FAIL: settings took ${settings_duration}s to appear from the real menu action." >&2
-    exit 14
+if [[ "${AWAITCUE_E2E_CHROME_ONLY:-0}" != "1" ]]; then
+    echo "E2E stage: real menu settings"
+    settings_duration="$(open_settings_from_menu_bar)" || {
+        echo "FAIL: settings could not be opened from the real menu action." >&2
+        exit 13
+    }
+    readonly settings_duration
+    if (( settings_duration > 2 )); then
+        echo "FAIL: settings took ${settings_duration}s to appear from the real menu action." >&2
+        exit 14
+    fi
+    echo "settings appeared from the real menu action in ${settings_duration}s"
+    wait_for_settings_window
+    verify_real_model_settings
+    close_settings_window
+else
+    echo "E2E stage: skip already-validated settings and Calculator stages"
 fi
-echo "settings appeared from the real menu action in ${settings_duration}s"
-wait_for_settings_window
-verify_real_model_settings
-close_settings_window
 
 open -a Calculator
 sleep 1
@@ -1022,17 +1031,36 @@ tell application "System Events"
         if not analysisStarted then error "Condition text did not enable analysis"
         repeat 200 times
             set allElements to entire contents of formWindow
+            set createButton to missing value
+            set summaryElement to missing value
+            set decisionElement to missing value
+            set confidenceElement to missing value
+            set explanationElement to missing value
             repeat with element in allElements
                 try
-                    if value of attribute "AXIdentifier" of element is "awaitcue.hook.create" then
-                        click element
-                        return
-                    end if
+                    set identifier to value of attribute "AXIdentifier" of element
+                    if identifier is "awaitcue.hook.create" then set createButton to element
+                    if identifier is "awaitcue.hook.condition-summary" then set summaryElement to element
+                    if identifier is "awaitcue.hook.current-decision" then set decisionElement to element
+                    if identifier is "awaitcue.hook.decision-confidence" then set confidenceElement to element
+                    if identifier is "awaitcue.hook.decision-explanation" then set explanationElement to element
                 end try
             end repeat
+            if createButton is not missing value and summaryElement is not missing value and decisionElement is not missing value and confidenceElement is not missing value and explanationElement is not missing value then
+                set summaryText to value of summaryElement as text
+                set decisionText to value of decisionElement as text
+                set confidenceText to value of confidenceElement as text
+                set explanationText to value of explanationElement as text
+                if summaryText does not contain "当 CN 全流量部署状态显示完成时" then error "unexpected reminder condition: " & summaryText
+                if decisionText does not contain "当前未满足" then error "unexpected current decision: " & decisionText
+                if confidenceText does not contain "判断置信度 99%" then error "unexpected decision confidence: " & confidenceText
+                if explanationText does not contain "尚未满足" then error "unexpected decision explanation: " & explanationText
+                click createButton
+                return
+            end if
             delay 0.1
         end repeat
-        error "Condition analysis did not produce a create action"
+        error "Condition analysis did not expose the reminder condition and current decision before creating"
     end tell
 end tell
 APPLESCRIPT
@@ -1098,27 +1126,28 @@ on run argv
     set expectedTitle to item 2 of argv
     tell application "System Events"
         tell process "AwaitCue"
-            set frontmost to true
             set countValue to missing value
             repeat 50 times
-                set allElements to entire contents of first window
-                set countValue to missing value
-                set titleFound to false
-                repeat with element in allElements
-                    try
-                        set identifier to value of attribute "AXIdentifier" of element
-                        if identifier is "awaitcue.menu.hook-count" then set countValue to value of element
-                        if identifier is "awaitcue.menu.hook-title" and value of element is expectedTitle then set titleFound to true
-                    end try
-                end repeat
-                if countValue is not missing value then
-                    if (countValue as text) is expectedCount and (expectedTitle is "" or titleFound) then
-                        key code 53
-                        repeat 30 times
-                            if not (exists first window) then exit repeat
-                            delay 0.1
-                        end repeat
-                        return
+                if exists window 1 then
+                    set allElements to entire contents of first window
+                    set countValue to missing value
+                    set titleFound to false
+                    repeat with element in allElements
+                        try
+                            set identifier to value of attribute "AXIdentifier" of element
+                            if identifier is "awaitcue.menu.hook-count" then set countValue to value of element
+                            if identifier is "awaitcue.menu.hook-title" and value of element is expectedTitle then set titleFound to true
+                        end try
+                    end repeat
+                    if countValue is not missing value then
+                        if (countValue as text) is expectedCount and (expectedTitle is "" or titleFound) then
+                            key code 53
+                            repeat 30 times
+                                if not (exists first window) then exit repeat
+                                delay 0.1
+                            end repeat
+                            return
+                        end if
                     end if
                 end if
                 delay 0.1
@@ -1138,21 +1167,22 @@ on run argv
     set expectedIdentifier to item 1 of argv
     tell application "System Events"
         tell process "AwaitCue"
-            set frontmost to true
             repeat 50 times
-                set allElements to entire contents of first window
-                repeat with element in allElements
-                    try
-                        if value of attribute "AXIdentifier" of element is expectedIdentifier then
-                            click element
-                            delay 0.1
-                            try
-                                key code 53
-                            end try
-                            return
-                        end if
-                    end try
-                end repeat
+                if exists window 1 then
+                    set allElements to entire contents of first window
+                    repeat with element in allElements
+                        try
+                            if value of attribute "AXIdentifier" of element is expectedIdentifier then
+                                click element
+                                delay 0.1
+                                try
+                                    key code 53
+                                end try
+                                return
+                            end if
+                        end try
+                    end repeat
+                end if
                 delay 0.1
             end repeat
             error "menu action is unavailable: " & expectedIdentifier
@@ -1266,7 +1296,7 @@ exit(10)
 SWIFT
     # 中间选区在垂直标签栏或双侧栏布局下无法唯一反推出 viewport 左边缘；
     # 真实 E2E 必须证明产品会打开创建窗口，而不是只覆盖贴右边缘的容易路径。
-    perform_frontmost_selection 0.35 0.35 0.70
+    perform_frontmost_selection 0.20 0.25 0.75
     wait_for_creation_window >/dev/null
     verify_real_creation_form
     if [[ -n "${AWAITCUE_E2E_CAPTURE_PATH:-}" ]]; then
@@ -1282,18 +1312,18 @@ SWIFT
         wait_for_creation_window_to_close
         wait_for_model_requests \
             "condition_evaluation" \
-            "data-status:running" \
+            "atom-pipeline-icon-queuing-circle-fill" \
             1
         verify_menu_hook "1" "AwaitCue Chrome E2E Target"
 
         echo "E2E stage: restart while Condition is still observing"
         pending_before_restart="$(model_request_count \
             "condition_evaluation" \
-            "data-status:running")"
+            "atom-pipeline-icon-queuing-circle-fill")"
         restart_e2e_app
         wait_for_model_requests \
             "condition_evaluation" \
-            "data-status:running" \
+            "atom-pipeline-icon-queuing-circle-fill" \
             "$((pending_before_restart + 1))"
 
         echo "E2E stage: mutate DOM and wait for two stable matched decisions"
@@ -1301,7 +1331,7 @@ SWIFT
         mark_chromium_fixture_complete
         wait_for_model_requests \
             "condition_evaluation" \
-            "data-status:success" \
+            "data-status=\"success\"" \
             2
         verify_menu_hook "1" "AwaitCue Chrome E2E Target"
         echo "E2E stage: cancel completed Condition observation"
@@ -1311,7 +1341,7 @@ SWIFT
 
         echo "E2E stage: create Delay Hook on the same exact Chrome tab"
         osascript -e 'tell application "Google Chrome" to activate'
-        perform_frontmost_selection 0.35 0.35 0.70
+        perform_frontmost_selection 0.20 0.25 0.75
         wait_for_creation_window >/dev/null
         verify_real_creation_form
         create_delay_hook_from_form
