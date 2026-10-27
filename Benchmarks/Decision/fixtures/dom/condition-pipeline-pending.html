@@ -1,0 +1,22 @@
+<section class="pipeline-graph pipeline-graph-horizontal" aria-label="线上部署流水线" data-awaitcue-rect="0,0,720,240">
+  <div class="pipeline-row pipeline-row-current" aria-label="当前运行分支" data-awaitcue-rect="0,0,720,100">
+    <article class="pipeline-node pipeline-node-waiting" data-awaitcue-rect="20,20,200,60">
+      <svg class="atom-pipeline-icon atom-pipeline-icon-queuing-circle-fill" aria-hidden="true" data-awaitcue-rect="32,38,20,20"></svg>
+      <span class="pipeline-node-name" data-awaitcue-rect="64,36,120,24">全流量部署</span>
+    </article>
+    <article class="pipeline-node pipeline-node-succeeded" data-awaitcue-rect="260,20,200,60">
+      <svg class="atom-pipeline-icon atom-pipeline-icon-check-circle-fill" aria-hidden="true" data-awaitcue-rect="272,38,20,20"></svg>
+      <span class="pipeline-node-name" data-awaitcue-rect="304,36,120,24">TCE全流量升级</span>
+    </article>
+    <article class="pipeline-node pipeline-node-succeeded" data-awaitcue-rect="500,20,200,60">
+      <svg class="atom-pipeline-icon atom-pipeline-icon-check-circle-fill" aria-hidden="true" data-awaitcue-rect="512,38,20,20"></svg>
+      <span class="pipeline-node-name" data-awaitcue-rect="544,36,120,24">全流量检测</span>
+    </article>
+  </div>
+  <div class="pipeline-row pipeline-row-skipped" aria-label="未运行分支" data-awaitcue-rect="0,120,240,100">
+    <article class="pipeline-node pipeline-node-ignored" data-awaitcue-rect="20,140,200,60">
+      <svg class="atom-pipeline-icon atom-pipeline-icon-ignored-circle-fill" aria-hidden="true" data-awaitcue-rect="32,158,20,20"></svg>
+      <span class="pipeline-node-name" data-awaitcue-rect="64,156,120,24">全流量部署</span>
+    </article>
+  </div>
+</section>

@@ -286,7 +286,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     }
 
     /// 取出框选响应携带的初始 DOM；读取后立即删除，避免页面内容在内存中长期滞留。
-    func previewDOMText(for target: BrowserTarget) -> String? {
+    func previewDOMText(for target: BrowserTarget) async -> String? {
         previewDOMByTarget.removeValue(forKey: Self.previewKey(for: target))
     }
 
@@ -866,6 +866,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     private static func domText(from evidence: [String: Any]) -> String? {
         let title = (evidence["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let url = (evidence["url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let html = (evidence["html"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = (evidence["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let semantics = (evidence["aria"] as? [String])?
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -874,9 +875,9 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         let insufficiency: String? = if evidence["availability"] as? String == "insufficient" {
             switch evidence["insufficiencyReason"] as? String {
             case "no_semantic_content":
-                "页面内容不足：框选区域没有可供判断的文字、ARIA 或语义状态属性；不得使用截图推测。"
+                "页面内容不足：框选区域没有可供判断的正文或 HTML 属性；不得使用截图推测。"
             default:
-                "页面内容不足：浏览器扩展无法读取足够的语义证据；不得使用截图推测。"
+                "页面内容不足：浏览器扩展无法读取足够的 HTML 证据；不得使用截图推测。"
             }
         } else {
             nil
@@ -889,17 +890,27 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         } else {
             nil
         }
-        let textHeading = selectionRegionExpanded
-            ? "扩大后读取范围内容（坐标相对于扩大后的读取范围左上角，单位为 CSS 像素，并非用户原始选区坐标）"
-            : "框选内容（坐标相对于选区左上角，单位为 CSS 像素）"
-        let parts = [
+        var parts = [
             expandedRegionGuidance,
             title.map { "页面标题：\($0)" },
             url.map { "页面 URL：\($0)" },
-            text.map { "\(textHeading)：\n\($0)" },
-            semantics.map { "语义属性：\n\($0)" },
-            insufficiency,
         ].compactMap { $0 }.filter { !$0.isEmpty }
+        if let html, !html.isEmpty {
+            let coordinateNote = selectionRegionExpanded
+                ? "data-awaitcue-rect 坐标相对于扩大后的读取范围左上角，并非用户原始选区坐标"
+                : "data-awaitcue-rect 坐标相对于框选区域左上角"
+            parts.append(
+                "框选区域精简 HTML（保留层级、class、ARIA 和 data-* 属性；\(coordinateNote)）：\n\(html)"
+            )
+        } else {
+            // 旧扩展没有 HTML 字段时继续读取原有扁平证据，避免升级期间已有 Hook 中断。
+            let textHeading = selectionRegionExpanded
+                ? "扩大后读取范围内容（坐标相对于扩大后的读取范围左上角，单位为 CSS 像素，并非用户原始选区坐标）"
+                : "框选内容（坐标相对于选区左上角，单位为 CSS 像素）"
+            if let text, !text.isEmpty { parts.append("\(textHeading)：\n\(text)") }
+            if let semantics, !semantics.isEmpty { parts.append("语义属性：\n\(semantics)") }
+        }
+        if let insufficiency { parts.append(insufficiency) }
         return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }
 

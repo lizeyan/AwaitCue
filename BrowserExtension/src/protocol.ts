@@ -90,6 +90,8 @@ export type Evidence = Readonly<{
   title: string;
   text: string;
   aria: string[];
+  // 新版扩展提供框选区域内的精简 HTML；optional 让升级期间的旧 content script 仍能继续上报。
+  html?: string;
   availability: "sufficient" | "insufficient";
   insufficiencyReason?: "no_semantic_content";
   // 浏览器侧栏导致映射不唯一时只扩大网页 DOM 范围，不读取或传递任何浏览器 UI 像素。

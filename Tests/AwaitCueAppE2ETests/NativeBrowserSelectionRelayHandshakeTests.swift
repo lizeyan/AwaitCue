@@ -481,6 +481,13 @@ struct NativeBrowserSelectionRelayHandshakeTests {
                 "title": "Build",
                 "region": ["x": 0.1, "y": 0.2, "width": 0.6, "height": 0.3],
                 "selectionRegionExpanded": true,
+                "evidence": [
+                    "title": "Build",
+                    "url": "https://example.com/build",
+                    "html": "<section class=\"pipeline\" data-awaitcue-rect=\"0,0,420,180\"><div aria-label=\"running\">单机房部署</div></section>",
+                    "text": "[0,0] 不应重复发送的扁平文字",
+                    "aria": ["不应重复发送的 ARIA 摘要"],
+                ],
             ],
         ])
         let resolution = try await recorder.waitForValue()
@@ -489,6 +496,16 @@ struct NativeBrowserSelectionRelayHandshakeTests {
             return
         }
         #expect(target.selectionRegionExpanded)
+        let relayThroughSelectionSeam: any BrowserSelectionRelaying = fixture.relay
+        let previewDOM = try #require(
+            await relayThroughSelectionSeam.previewDOMText(for: target)
+        )
+        #expect(previewDOM.contains("框选区域精简 HTML"))
+        #expect(previewDOM.contains("层级、class、ARIA 和 data-* 属性"))
+        #expect(previewDOM.contains("data-awaitcue-rect"))
+        #expect(previewDOM.contains("<section class=\"pipeline\""))
+        #expect(previewDOM.contains("不应重复发送的扁平文字") == false)
+        #expect(previewDOM.contains("不应重复发送的 ARIA 摘要") == false)
 
         let hookID = HookID(rawValue: UUID())
         let completion = OperationCompletionRecorder()
@@ -538,8 +555,9 @@ struct NativeBrowserSelectionRelayHandshakeTests {
                 "hookID": hookID.rawValue.uuidString,
                 "title": "Build",
                 "url": "https://example.com/build",
-                "text": "[10,20] CN 全流量部署完成",
-                "aria": ["status: succeeded"],
+                "html": "<section class=\"pipeline\" data-awaitcue-rect=\"10,20,420,180\"><div aria-label=\"succeeded\">CN 全流量部署完成</div></section>",
+                "text": "[10,20] 不应重复发送的扁平文字",
+                "aria": ["不应重复发送的 ARIA 摘要"],
             ],
         ])
         try await Task.sleep(for: .milliseconds(30))
@@ -550,6 +568,54 @@ struct NativeBrowserSelectionRelayHandshakeTests {
         #expect(domText.contains("才可判断 matched"))
         #expect(domText.contains("证据冲突时必须判断 uncertain"))
         #expect(domText.contains("并非用户原始选区坐标"))
+        #expect(domText.contains("框选区域精简 HTML"))
+        #expect(domText.contains("层级、class、ARIA 和 data-* 属性"))
+        #expect(domText.contains("data-awaitcue-rect"))
+        #expect(domText.contains("<section class=\"pipeline\""))
+        #expect(domText.contains("不应重复发送的扁平文字") == false)
+        #expect(domText.contains("不应重复发送的 ARIA 摘要") == false)
+        #expect(try await fixture.relay.evidence(for: hookID).image == nil)
+    }
+
+    @Test("旧扩展缺少精简 HTML 时继续发送扁平文字和语义属性")
+    func legacySemanticEvidenceRemainsCompatible() async throws {
+        let fixture = try await RelayHandshakeFixture()
+        defer { fixture.stop() }
+        try await fixture.verifyConnection()
+        let hookID = HookID(rawValue: UUID())
+        let target = BrowserTarget(
+            browserBundleIdentifier: "com.google.Chrome",
+            nativeWindowIdentifier: 42,
+            extensionInstallationID: "installation-1",
+            tabIdentifier: 7,
+            host: "example.com",
+            initialURL: URL(string: "https://example.com/build")!,
+            initialTitle: "Build",
+            normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1),
+            observationMode: .dom
+        )
+        try await fixture.bindAndAcknowledge(hookID: hookID, target: target)
+
+        try await fixture.sendBrowserEvent([
+            "type": "evidenceChanged",
+            "extensionInstallationID": "installation-1",
+            "browserBundleIdentifier": "com.google.Chrome",
+            "evidence": [
+                "hookID": hookID.rawValue.uuidString,
+                "title": "Build",
+                "url": "https://example.com/build",
+                "text": "[10,20] CN 全流量部署完成",
+                "aria": ["status: succeeded"],
+            ],
+        ])
+        try await Task.sleep(for: .milliseconds(30))
+
+        let evidence = try await fixture.relay.evidence(for: hookID)
+        #expect(evidence.domText?.contains("框选内容（坐标相对于选区左上角") == true)
+        #expect(evidence.domText?.contains("[10,20] CN 全流量部署完成") == true)
+        #expect(evidence.domText?.contains("语义属性：\nstatus: succeeded") == true)
+        #expect(evidence.domText?.contains("框选区域精简 HTML") == false)
+        #expect(evidence.image == nil)
     }
 
     @Test("无语义页面只产生证据不足文字且绝不产生图片")

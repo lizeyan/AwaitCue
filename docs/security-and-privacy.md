@@ -4,8 +4,8 @@ AwaitCue handles screen content that may include source code, documents, message
 
 ## Local guarantees
 
-- Ordinary-App screenshots, Appropriate to Interrupt screenshots, frozen selection frames, and browser DOM text remain in memory only.
-- Safari and Chromium Browser Targets read page text, ARIA, semantic state classes, form/progress attributes, and relative coordinates. They never capture or send browser screenshots.
+- Ordinary-App screenshots, Appropriate to Interrupt screenshots, frozen selection frames, and sanitized browser HTML evidence remain in memory only.
+- Safari and Chromium Browser Targets produce a length-bounded HTML fragment that preserves relevant page hierarchy, visible text, complete `class` values, ARIA and `data-*` attributes, and relative `data-awaitcue-rect` coordinates. They never capture or send browser screenshots.
 - The application does not collect clipboard contents or actual key values.
 - API keys are stored in macOS Keychain.
 - Structured logs contain identifiers, decision enums, confidence, and sanitized error categories only.
@@ -27,7 +27,7 @@ Text and images from observed apps are data, never instructions. Model instructi
 
 ## Browser permissions
 
-All Browser Targets are DOM-only. Extensions do not request tab video, browser screenshots, or pixel-capture permissions. If the mapped page DOM range exposes no usable text, ARIA, semantic state class, form/progress attribute, or equivalent page meaning, the extension reports `no_semantic_content`; AwaitCue must treat this as insufficient evidence and return or retain `uncertain`, never infer state from absent pixels.
+All Browser Targets are DOM-only. Extensions do not request tab video, browser screenshots, or pixel-capture permissions. The local extractor only selects intersecting page content, removes unrelated or unsafe markup, preserves the remaining HTML relationships and allowed attributes, and enforces the evidence limit. It must not classify business state from a class-name vocabulary or add website-specific status handling. If the mapped page DOM range exposes no usable HTML meaning, the extension reports `no_semantic_content`; AwaitCue must treat this as insufficient evidence and return or retain `uncertain`, never infer state from absent pixels.
 
 Chromium does not expose how total horizontal browser chrome is divided between left and right sidebars. When that prevents an exact page-viewport mapping, AwaitCue derives every possible horizontal mapping and reads the smallest page DOM range covering all of them instead of rejecting the Hook or guessing one side. The creation window must disclose that the range was expanded and may contain adjacent page content. Model instructions must require `uncertain` when evidence within that expanded range conflicts. The extension still cannot read the address bar, tab strip, bookmarks bar, browser sidebar, or browser pixels because none of those surfaces are part of the page DOM.
 

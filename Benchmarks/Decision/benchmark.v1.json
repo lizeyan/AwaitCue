@@ -189,6 +189,16 @@
       }
     },
     {
+      "id": "condition-browser-pipeline-pending-html",
+      "kind": "condition",
+      "expected": "notMatched",
+      "condition": "全流量部署完成。",
+      "tags": ["browser", "dom-only", "negative", "scenario:pipeline-pending-html"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-pipeline-pending.html"
+      }
+    },
+    {
       "id": "condition-app-queued",
       "kind": "condition",
       "expected": "notMatched",

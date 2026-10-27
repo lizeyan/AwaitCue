@@ -147,7 +147,10 @@ describe("content script messages", () => {
 
     expect(sendResponse).toHaveBeenCalledWith({
       ok: true,
-      evidence: expect.objectContaining({ selectionRegionExpanded: true })
+      evidence: expect.objectContaining({
+        selectionRegionExpanded: true,
+        html: expect.stringContaining("Waiting")
+      })
     });
     expect(sendResponse.mock.calls[0]?.[0].evidence).not.toHaveProperty("imageDataURL");
 
@@ -160,6 +163,7 @@ describe("content script messages", () => {
       .filter((message) => message.type === "awaitcue.evidence");
     expect(evidenceMessages).toHaveLength(1);
     expect(evidenceMessages[0].evidence).toMatchObject({ selectionRegionExpanded: true });
+    expect(evidenceMessages[0].evidence.html).toContain("Succeeded");
     expect(evidenceMessages[0].evidence).not.toHaveProperty("imageDataURL");
     vi.useRealTimers();
   });

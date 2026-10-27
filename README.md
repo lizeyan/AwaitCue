@@ -17,14 +17,14 @@ AwaitCue is in active early development. The repository currently focuses on pro
 - **Interruption-aware delivery** — notification delivery waits until the current screen context is appropriate to interrupt.
 - **Explicit targets** — every Hook is bound to a selected app window or a specific Safari/Chromium tab.
 - **User-owned model connection** — configure an OpenAI Responses API-compatible base URL, API key, and image-capable model.
-- **Privacy by construction** — browser Targets use page text/ARIA/status attributes and never browser screenshots; ordinary macOS App screenshots and model request bodies are memory-only; API keys live in Keychain; telemetry is off.
+- **Privacy by construction** — browser Targets use a sanitized, length-bounded HTML fragment from the selected page region and never browser screenshots; ordinary macOS App screenshots and model request bodies are memory-only; API keys live in Keychain; telemetry is off.
 
 ## Planned user flow
 
 1. Press the global shortcut.
 2. Select one region inside one app window.
 3. AwaitCue resolves the target:
-   - Safari or Chromium tab and DOM/ARIA/status region, without browser screenshots; or
+   - Safari or Chromium tab and sanitized page-HTML region, without browser screenshots; or
    - macOS window and normalized capture region through ScreenCaptureKit.
 4. Create a Condition Hook or a Delay Hook.
 5. Keep working while AwaitCue watches.
@@ -157,7 +157,7 @@ Submission requirements, permission justifications, listing copy, and remaining 
 
 Unpacked extension IDs can differ by browser and profile, so the installer accepts a separate ID for Chrome, Edge, Chromium, and Arc. The native host only relays messages while the AwaitCue menu bar app is running and has published a private loopback token.
 
-Chrome vertical tabs and left and/or right browser sidebars can make the page viewport's exact horizontal origin unavailable to an extension. AwaitCue no longer rejects those selections solely because the origin is ambiguous. Instead, it expands the page DOM range horizontally to the smallest range that covers every possible mapping of the selected rectangle. This may include page content immediately to the left or right of the rectangle, but it never reads the address bar, tab strip, bookmarks bar, browser sidebar, or a browser screenshot. The creation window discloses the expansion, and the model is instructed to return `uncertain` when the expanded evidence conflicts. Arc support remains experimental, and Chrome remains the reference browser for the current release.
+Chrome vertical tabs and left and/or right browser sidebars can make the page viewport's exact horizontal origin unavailable to an extension. AwaitCue no longer rejects those selections solely because the origin is ambiguous. Instead, it expands the page DOM range horizontally to the smallest range that covers every possible mapping of the selected rectangle. This may include page content immediately to the left or right of the rectangle, but it never reads the address bar, tab strip, bookmarks bar, browser sidebar, or a browser screenshot. The extension locally removes unrelated or unsafe markup and caps the evidence size, while preserving the relevant element hierarchy, visible text, complete `class` values, ARIA and `data-*` attributes, and relative `data-awaitcue-rect` coordinates. It does not interpret class names through a site-specific or business-status vocabulary; the configured decision model judges the resulting HTML against the user's Condition. The creation window discloses any horizontal expansion, and the model is instructed to return `uncertain` when the expanded evidence conflicts. Arc support remains experimental, and Chrome remains the reference browser for the current release.
 
 The protected `master` branch requires every PR check to pass. Testable Swift library seams and shared TypeScript business modules are each required to remain at or above 90% coverage. `coverage/swift.lcov` is that core gate; `coverage/swift-all.lcov` additionally includes `AwaitCueApp`, SwiftUI, AppKit, TCC, and system adapters so UI/wiring gaps remain visible instead of being hidden behind the core number. User-facing App behavior is required to pass the AppKit tests plus the permission-gated real-process smoke above. Required CI still builds the complete app bundle; Safari remains outside the current local-App/Chrome acceptance scope until Apple signing is available.
 
@@ -178,6 +178,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete development workflow.
 AwaitCue observes highly sensitive screen context, so the implementation follows strict defaults:
 
 - no browser screenshots at all, and no App screenshot or DOM history on disk;
+- no local website-specific status rules: browser markup is only selected, sanitized, length-bounded, and passed to the configured model;
 - no telemetry or crash reporting in the first release;
 - no keystroke contents or clipboard collection;
 - no background operation after the menu bar app exits;
@@ -189,7 +190,7 @@ Read [docs/security-and-privacy.md](docs/security-and-privacy.md) for the detail
 
 ## 中文简介
 
-AwaitCue（候场）是一个开源 macOS 菜单栏应用。你可以在应用窗口、Safari 标签页或 Chromium 标签页中框选一个区域，创建条件 Hook 或延迟 Hook。浏览器 Target 只读取页面文字、ARIA 和状态属性，不上传浏览器截图；当浏览器左右侧栏导致网页横向原点无法精确确定时，AwaitCue 会把网页 DOM 读取范围横向扩大到覆盖所有可能映射，因此可能包含框选区域左右相邻的页面内容。AwaitCue 负责观察目标，并且只在目标已经值得重新关注、同时你适合被打断时通知你。
+AwaitCue（候场）是一个开源 macOS 菜单栏应用。你可以在应用窗口、Safari 标签页或 Chromium 标签页中框选一个区域，创建条件 Hook 或延迟 Hook。浏览器 Target 不上传浏览器截图，而是从框选对应的网页区域生成经过清洗和限长的精简 HTML，保留正文层级、完整 class、ARIA、data-* 属性和相对坐标，交给用户配置的模型判断；本地代码不维护网站专用的状态词表。当浏览器左右侧栏导致网页横向原点无法精确确定时，AwaitCue 会把网页 DOM 读取范围横向扩大到覆盖所有可能映射，因此可能包含框选区域左右相邻的页面内容。AwaitCue 负责观察目标，并且只在目标已经值得重新关注、同时你适合被打断时通知你。
 
 它不是严格到点的倒计时，也不会在菜单栏应用退出后继续监控屏幕。
 

@@ -555,6 +555,7 @@ describe("background service worker startup", () => {
         title: "Build",
         text: "[10,20] Waiting",
         aria: ["class:status-pending"],
+        html: '<div class="status-pending">Waiting</div>',
         availability: "sufficient",
         selectionRegionExpanded: true,
         fingerprint: "12345678"
@@ -581,6 +582,7 @@ describe("background service worker startup", () => {
         evidence: expect.objectContaining({
           hookID: "hook-static",
           text: "[10,20] Waiting",
+          html: '<div class="status-pending">Waiting</div>',
           availability: "sufficient",
           selectionRegionExpanded: true
         })
@@ -688,6 +690,10 @@ describe("background service worker startup", () => {
         })
       });
     });
+    const legacyEvidence = fixture.nativePort.postMessage.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === "evidenceChanged")?.evidence;
+    expect(legacyEvidence).not.toHaveProperty("html");
 
     fixture.nativePort.postMessage.mockClear();
     listener({
@@ -794,6 +800,7 @@ describe("background service worker startup", () => {
         title: "Build",
         text: "[10,20] Build succeeded",
         aria: ["class:status-success"],
+        html: '<div class="status-success">Build succeeded</div>',
         availability: "sufficient",
         selectionRegionExpanded: true,
         fingerprint: "12345678"
@@ -809,6 +816,7 @@ describe("background service worker startup", () => {
         evidence: {
           text: "[10,20] Build succeeded",
           aria: ["class:status-success"],
+          html: '<div class="status-success">Build succeeded</div>',
           availability: "sufficient",
           selectionRegionExpanded: true
         }
@@ -839,6 +847,30 @@ describe("background service worker startup", () => {
     const event = await resolveSelection(fixture);
 
     expect(event).toMatchObject({ matched: false, reason: "invalid_page_response" });
+  });
+
+  it("rejects a non-string HTML field from page evidence", async () => {
+    const fixture = makeBackgroundFixture();
+    await import("../src/background");
+    const listener = fixture.runtimeMessages.listeners[0] as (message: unknown) => void;
+
+    listener({
+      type: "awaitcue.evidence",
+      evidence: {
+        hookID: "hook-invalid-html",
+        url: "https://build.example/job",
+        title: "Build",
+        text: "Waiting",
+        aria: [],
+        html: { unsafe: true },
+        fingerprint: "12345678"
+      }
+    });
+    await Promise.resolve();
+
+    expect(fixture.nativePort.postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "evidenceChanged" })
+    );
   });
 
   it("keeps the request identity when page access fails", async () => {

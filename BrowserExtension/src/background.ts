@@ -548,13 +548,14 @@ function normalizeEvidence(value: unknown): Evidence | null {
     typeof value.text !== "string" ||
     !Array.isArray(value.aria) ||
     !value.aria.every((entry) => typeof entry === "string") ||
+    !(value.html === undefined || typeof value.html === "string") ||
     !(value.selectionRegionExpanded === undefined || typeof value.selectionRegionExpanded === "boolean") ||
     typeof value.fingerprint !== "string"
   ) {
     return null;
   }
   // 是否足够只能由实际页面证据决定，不能信任跨进程消息里自报的状态。
-  const availability = value.text || value.aria.length > 0 ? "sufficient" : "insufficient";
+  const availability = value.text || value.aria.length > 0 || value.html ? "sufficient" : "insufficient";
   const insufficiencyReason = availability === "insufficient" ? "no_semantic_content" : undefined;
   return {
     hookID: value.hookID,
@@ -562,6 +563,7 @@ function normalizeEvidence(value: unknown): Evidence | null {
     title: value.title,
     text: value.text,
     aria: value.aria,
+    ...(typeof value.html === "string" ? { html: value.html } : {}),
     availability,
     ...(insufficiencyReason ? { insufficiencyReason } : {}),
     ...(typeof value.selectionRegionExpanded === "boolean"
