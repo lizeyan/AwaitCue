@@ -13,13 +13,15 @@ test("canonical fixtures cover every decision and evidence surface without secre
   const source = await readFile(manifestPath, "utf8");
   assert.doesNotMatch(source, /(api[_-]?key|bearer\s+|bytedance\.net|aidp\.)/i);
   const manifest = validateBenchmarkManifest(JSON.parse(source), benchmarkDirectory);
-  assert.equal(manifest.cases.length, 24);
+  assert.equal(manifest.cases.length, 26);
   const requiredScenarios = new Set([
     "scenario:overall-failed-local-success",
     "scenario:duplicate-name-conflict",
+    "scenario:expanded-region-conflict",
     "scenario:condition-text-not-fact",
     "scenario:explicit-failure",
     "scenario:queued",
+    "scenario:pipeline-pending-html",
     "scenario:status-missing",
     "scenario:meeting",
     "scenario:presentation",
@@ -74,5 +76,15 @@ test("canonical fixtures cover every decision and evidence surface without secre
     manifest.cases.filter((entry) => entry.tags.includes("scenario:no-semantic-content")).length,
     1,
   );
+  const pipelineCase = manifest.cases.find((entry) =>
+    entry.tags.includes("scenario:pipeline-pending-html")
+  );
+  assert.ok(pipelineCase?.evidence.textFile, "pipeline HTML benchmark fixture must exist");
+  const pipelineHTML = await readFile(pipelineCase.evidence.textFile, "utf8");
+  assert.match(pipelineHTML, /^<section[\s>]/);
+  assert.match(pipelineHTML, /data-awaitcue-rect="[^"]+"/);
+  assert.match(pipelineHTML, /class="[^"]*atom-pipeline-icon-queuing-circle-fill[^"]*"/);
+  assert.match(pipelineHTML, /aria-(?:label|hidden)="[^"]+"/);
+  assert.doesNotMatch(pipelineHTML, /^\[[^\]]+\]\s+class:/m);
   assert.deepEqual(actualCases, expectedCases);
 });

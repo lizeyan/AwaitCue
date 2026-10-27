@@ -47,6 +47,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     private struct BoundInstallation {
         let extensionInstallationID: String
         let browserBundleIdentifier: String
+        let selectionRegionExpanded: Bool
     }
 
     private struct BrowserInstallationIdentity: Hashable {
@@ -176,10 +177,12 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             "expectedHost": target.host,
             "expectedURL": target.initialURL.absoluteString,
             "region": Self.jsonRegion(target.normalizedRegion),
+            "selectionRegionExpanded": target.selectionRegionExpanded,
         ]
         installationByHook[hookID] = BoundInstallation(
             extensionInstallationID: target.extensionInstallationID,
-            browserBundleIdentifier: target.browserBundleIdentifier
+            browserBundleIdentifier: target.browserBundleIdentifier,
+            selectionRegionExpanded: target.selectionRegionExpanded
         )
         let payload = try JSONSerialization.data(withJSONObject: command)
         let commandTimeout = commandAcknowledgementTimeout
@@ -283,7 +286,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     }
 
     /// 取出框选响应携带的初始 DOM；读取后立即删除，避免页面内容在内存中长期滞留。
-    func previewDOMText(for target: BrowserTarget) -> String? {
+    func previewDOMText(for target: BrowserTarget) async -> String? {
         previewDOMByTarget.removeValue(forKey: Self.previewKey(for: target))
     }
 
@@ -763,12 +766,11 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     }
 
     private func handleDOMEvidence(_ object: [String: Any]) {
-        guard let evidence = object["evidence"] as? [String: Any],
+        guard var evidence = object["evidence"] as? [String: Any],
               let installationID = object["extensionInstallationID"] as? String,
               let browserBundleIdentifier = object["browserBundleIdentifier"] as? String,
               let hookIDString = evidence["hookID"] as? String,
-              let uuid = UUID(uuidString: hookIDString),
-              let domText = Self.domText(from: evidence)
+              let uuid = UUID(uuidString: hookIDString)
         else {
             return
         }
@@ -779,6 +781,12 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         else {
             return
         }
+        // 持久化的 Target 是读取范围语义的权威来源；即使旧扩展漏传可选字段，
+        // 也不能让模型在 App 重启或扩展回退后把扩大范围误认为精确框选。
+        if binding.selectionRegionExpanded {
+            evidence["selectionRegionExpanded"] = true
+        }
+        guard let domText = Self.domText(from: evidence) else { return }
         evidenceByHook[hookID] = ModelEvidence(domText: domText)
         evidenceUpdateContinuation.yield(hookID)
     }
@@ -832,12 +840,18 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
             initialURL: url,
             initialTitle: title,
             normalizedRegion: region,
-            observationMode: .dom
+            observationMode: .dom,
+            selectionRegionExpanded: target["selectionRegionExpanded"] as? Bool ?? false
         )
-        if let evidence = target["evidence"] as? [String: Any],
-           let domText = Self.domText(from: evidence)
+        if var evidence = target["evidence"] as? [String: Any]
         {
-            previewDOMByTarget[Self.previewKey(for: browserTarget)] = domText
+            // 框选响应的首份证据可能只在 target 层携带标记；统一补进 evidence，确保预览与后续判断语义一致。
+            if browserTarget.selectionRegionExpanded {
+                evidence["selectionRegionExpanded"] = true
+            }
+            if let domText = Self.domText(from: evidence) {
+                previewDOMByTarget[Self.previewKey(for: browserTarget)] = domText
+            }
         }
         pendingSelection.collector.record(
             browserBundleIdentifier: browserBundleIdentifier,
@@ -852,6 +866,7 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
     private static func domText(from evidence: [String: Any]) -> String? {
         let title = (evidence["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let url = (evidence["url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let html = (evidence["html"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = (evidence["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let semantics = (evidence["aria"] as? [String])?
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -860,20 +875,42 @@ actor NativeBrowserSelectionRelay: BrowserSelectionRelaying, ActiveBrowserHostRe
         let insufficiency: String? = if evidence["availability"] as? String == "insufficient" {
             switch evidence["insufficiencyReason"] as? String {
             case "no_semantic_content":
-                "页面内容不足：框选区域没有可供判断的文字、ARIA 或语义状态属性；不得使用截图推测。"
+                "页面内容不足：框选区域没有可供判断的正文或 HTML 属性；不得使用截图推测。"
             default:
-                "页面内容不足：浏览器扩展无法读取足够的语义证据；不得使用截图推测。"
+                "页面内容不足：浏览器扩展无法读取足够的 HTML 证据；不得使用截图推测。"
             }
         } else {
             nil
         }
-        let parts = [
+        let selectionRegionExpanded = evidence["selectionRegionExpanded"] as? Bool == true
+        let expandedRegionGuidance: String? = if selectionRegionExpanded {
+            """
+            读取范围提示：浏览器侧栏导致读取范围横向扩大，以下证据可能包含用户原框选区域左右相邻的页面内容。只有目标状态能够唯一对应，或读取范围内相关证据一致时，才可判断 matched；证据冲突时必须判断 uncertain。
+            """
+        } else {
+            nil
+        }
+        var parts = [
+            expandedRegionGuidance,
             title.map { "页面标题：\($0)" },
             url.map { "页面 URL：\($0)" },
-            text.map { "框选内容（坐标相对于选区左上角，单位为 CSS 像素）：\n\($0)" },
-            semantics.map { "语义属性：\n\($0)" },
-            insufficiency,
         ].compactMap { $0 }.filter { !$0.isEmpty }
+        if let html, !html.isEmpty {
+            let coordinateNote = selectionRegionExpanded
+                ? "data-awaitcue-rect 坐标相对于扩大后的读取范围左上角，并非用户原始选区坐标"
+                : "data-awaitcue-rect 坐标相对于框选区域左上角"
+            parts.append(
+                "框选区域精简 HTML（保留层级、class、ARIA 和 data-* 属性；\(coordinateNote)）：\n\(html)"
+            )
+        } else {
+            // 旧扩展没有 HTML 字段时继续读取原有扁平证据，避免升级期间已有 Hook 中断。
+            let textHeading = selectionRegionExpanded
+                ? "扩大后读取范围内容（坐标相对于扩大后的读取范围左上角，单位为 CSS 像素，并非用户原始选区坐标）"
+                : "框选内容（坐标相对于选区左上角，单位为 CSS 像素）"
+            if let text, !text.isEmpty { parts.append("\(textHeading)：\n\(text)") }
+            if let semantics, !semantics.isEmpty { parts.append("语义属性：\n\(semantics)") }
+        }
+        if let insufficiency { parts.append(insufficiency) }
         return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }
 

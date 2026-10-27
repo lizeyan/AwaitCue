@@ -88,6 +88,21 @@ public struct BrowserTarget: Codable, Equatable, Sendable {
     public let initialTitle: String
     public let normalizedRegion: NormalizedRegion
     public let observationMode: ObservationMode
+    /// 浏览器侧栏使 viewport 横向位置无法唯一确定时，扩展会读取覆盖所有可能位置的页面范围。
+    public let selectionRegionExpanded: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case browserBundleIdentifier
+        case nativeWindowIdentifier
+        case extensionInstallationID
+        case tabIdentifier
+        case host
+        case initialURL
+        case initialTitle
+        case normalizedRegion
+        case observationMode
+        case selectionRegionExpanded
+    }
 
     public init(
         browserBundleIdentifier: String,
@@ -98,7 +113,8 @@ public struct BrowserTarget: Codable, Equatable, Sendable {
         initialURL: URL,
         initialTitle: String,
         normalizedRegion: NormalizedRegion,
-        observationMode: ObservationMode
+        observationMode: ObservationMode,
+        selectionRegionExpanded: Bool = false
     ) {
         self.browserBundleIdentifier = browserBundleIdentifier
         self.nativeWindowIdentifier = nativeWindowIdentifier
@@ -109,6 +125,39 @@ public struct BrowserTarget: Codable, Equatable, Sendable {
         self.initialTitle = initialTitle
         self.normalizedRegion = normalizedRegion
         self.observationMode = observationMode
+        self.selectionRegionExpanded = selectionRegionExpanded
+    }
+
+    /// 旧版持久化数据没有扩大范围字段；缺失时必须保持原有精确选区语义。
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        browserBundleIdentifier = try container.decode(String.self, forKey: .browserBundleIdentifier)
+        nativeWindowIdentifier = try container.decode(UInt32.self, forKey: .nativeWindowIdentifier)
+        extensionInstallationID = try container.decode(String.self, forKey: .extensionInstallationID)
+        tabIdentifier = try container.decode(Int.self, forKey: .tabIdentifier)
+        host = try container.decode(String.self, forKey: .host)
+        initialURL = try container.decode(URL.self, forKey: .initialURL)
+        initialTitle = try container.decode(String.self, forKey: .initialTitle)
+        normalizedRegion = try container.decode(NormalizedRegion.self, forKey: .normalizedRegion)
+        observationMode = try container.decode(ObservationMode.self, forKey: .observationMode)
+        selectionRegionExpanded = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .selectionRegionExpanded
+        ) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(browserBundleIdentifier, forKey: .browserBundleIdentifier)
+        try container.encode(nativeWindowIdentifier, forKey: .nativeWindowIdentifier)
+        try container.encode(extensionInstallationID, forKey: .extensionInstallationID)
+        try container.encode(tabIdentifier, forKey: .tabIdentifier)
+        try container.encode(host, forKey: .host)
+        try container.encode(initialURL, forKey: .initialURL)
+        try container.encode(initialTitle, forKey: .initialTitle)
+        try container.encode(normalizedRegion, forKey: .normalizedRegion)
+        try container.encode(observationMode, forKey: .observationMode)
+        try container.encode(selectionRegionExpanded, forKey: .selectionRegionExpanded)
     }
 }
 

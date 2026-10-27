@@ -2,6 +2,8 @@ import AwaitCueCore
 import SwiftUI
 
 struct HookCreationView: View {
+    static let expandedSelectionWarning = "浏览器侧栏使页面读取范围横向扩大，可能包含原框选区域左右相邻的页面内容。请确认模型理解只对应目标状态；内容冲突时应显示“当前无法确定”。"
+
     private enum HookKind: String, CaseIterable, Identifiable {
         case condition = "条件满足时"
         case delay = "至少等待一段时间"
@@ -42,6 +44,13 @@ struct HookCreationView: View {
                 TextField("例如：编译成功或失败时", text: $conditionText, axis: .vertical)
                     .lineLimit(3 ... 6)
                     .accessibilityIdentifier("awaitcue.hook.condition")
+                if showsExpandedSelectionWarning {
+                    Label(Self.expandedSelectionWarning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("awaitcue.hook.expanded-selection-warning")
+                }
                 if model.modelStatus != .connected {
                     Label("条件 Hook 需要先在设置中测试并保存支持图片输入的决策模型。", systemImage: "exclamationmark.triangle")
                         .font(.caption)
@@ -132,6 +141,11 @@ struct HookCreationView: View {
         return "macwindow"
     }
 
+    var showsExpandedSelectionWarning: Bool {
+        guard case let .browser(browser) = model.pendingTarget else { return false }
+        return browser.selectionRegionExpanded
+    }
+
     @MainActor
     private func create() async {
         isCreating = true
@@ -173,24 +187,41 @@ struct HookCreationView: View {
     @ViewBuilder
     private var conditionPreview: some View {
         if let preview = model.conditionPreview {
-            GroupBox("模型理解") {
-                VStack(alignment: .leading, spacing: 6) {
+            GroupBox("分析结果") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("满足以下提醒条件时通知：")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text(preview.confirmedSummary)
+                        .accessibilityIdentifier("awaitcue.hook.condition-summary")
+                    Divider()
+                    Text("当前判断")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     HStack {
                         Label(decisionLabel(preview.currentDecision), systemImage: decisionIcon(preview.currentDecision))
+                            .accessibilityIdentifier("awaitcue.hook.current-decision")
                         Spacer()
-                        Text("置信度 \(Int(preview.confidence * 100))%")
+                        Text("判断置信度 \(Int(preview.confidence * 100))%")
                             .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("awaitcue.hook.decision-confidence")
                     }
                     .font(.caption)
                     if preview.currentDecision == .matched {
                         Text("当前已经满足。创建后仍会执行第二次稳定确认，不会立即通知。")
                             .font(.caption)
                             .foregroundStyle(.orange)
-                    } else if preview.currentDecision == .uncertain {
-                        Text("当前框选内容不足以可靠判断；可以调整条件，或重新框选更明确的区域。")
+                            .accessibilityIdentifier("awaitcue.hook.decision-explanation")
+                    } else if preview.currentDecision == .notMatched {
+                        Text("当前证据明确显示提醒条件尚未满足；创建后会继续观察。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("awaitcue.hook.decision-explanation")
+                    } else if preview.currentDecision == .uncertain {
+                        Text("当前证据不足或相互冲突；这不表示提醒条件已经满足。可以调整条件，或重新框选更明确的区域。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("awaitcue.hook.decision-explanation")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

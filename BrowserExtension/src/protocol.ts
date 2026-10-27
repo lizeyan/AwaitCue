@@ -18,6 +18,7 @@ export type BindTargetCommand = Readonly<{
   expectedHost: string;
   expectedURL: string;
   region: NormalizedRegion;
+  selectionRegionExpanded?: boolean;
 }>;
 
 export type UnbindTargetCommand = Readonly<{
@@ -89,8 +90,12 @@ export type Evidence = Readonly<{
   title: string;
   text: string;
   aria: string[];
+  // 新版扩展提供框选区域内的精简 HTML；optional 让升级期间的旧 content script 仍能继续上报。
+  html?: string;
   availability: "sufficient" | "insufficient";
   insufficiencyReason?: "no_semantic_content";
+  // 浏览器侧栏导致映射不唯一时只扩大网页 DOM 范围，不读取或传递任何浏览器 UI 像素。
+  selectionRegionExpanded?: boolean;
   fingerprint: string;
 }>;
 
@@ -164,6 +169,7 @@ export type ExtensionEvent =
         url: string;
         title: string;
         region: NormalizedRegion;
+        selectionRegionExpanded?: boolean;
         evidence?: Evidence;
       }>;
     }>
@@ -247,7 +253,8 @@ export function parseNativeCommand(value: unknown): NativeCommand | null {
     typeof value.tabID === "number" &&
     typeof value.expectedHost === "string" &&
     typeof value.expectedURL === "string" &&
-    isNormalizedRegion(value.region)
+    isNormalizedRegion(value.region) &&
+    (value.selectionRegionExpanded === undefined || typeof value.selectionRegionExpanded === "boolean")
   ) {
     return {
       type: "bindTarget",
@@ -257,7 +264,10 @@ export function parseNativeCommand(value: unknown): NativeCommand | null {
       tabID: value.tabID,
       expectedHost: value.expectedHost,
       expectedURL: value.expectedURL,
-      region: value.region
+      region: value.region,
+      ...(typeof value.selectionRegionExpanded === "boolean"
+        ? { selectionRegionExpanded: value.selectionRegionExpanded }
+        : {})
     };
   }
   return null;

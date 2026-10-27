@@ -44,15 +44,17 @@ curl --fail --silent "http://127.0.0.1:${port}/index.html" \
 
 request_decision() {
     local marker="$1"
+    local payload
+    payload="$(jq -nc --arg marker "${marker}" '{text:{format:{name:"condition_evaluation"}},input:[{content:[{type:"input_text",text:$marker}]}]}')"
     curl --fail --silent \
         -X POST "http://127.0.0.1:${port}/v1/responses" \
         -H 'Content-Type: application/json' \
-        --data "{\"text\":{\"format\":{\"name\":\"condition_evaluation\"}},\"input\":[{\"content\":[{\"type\":\"input_text\",\"text\":\"${marker}\"}]}]}" \
+        --data "${payload}" \
         | jq -r '.output[0].content[0].text | fromjson | .decision'
 }
 
-test "$(request_decision 'data-status:running')" = "notMatched"
-test "$(request_decision 'data-status:success')" = "matched"
+test "$(request_decision 'data-status="running"')" = "notMatched"
+test "$(request_decision 'data-status="success"')" = "matched"
 test "$(jq -s 'map(select(.name == "condition_evaluation")) | length' "${request_log}")" = "2"
 
 echo "Chrome E2E fixture and loopback Responses behavior passed."

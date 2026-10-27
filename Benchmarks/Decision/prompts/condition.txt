@@ -1,5 +1,6 @@
 Judge only whether the current evidence satisfies the user-approved Condition.
-Browser evidence contains only selected-region webpage content such as DOM text, ARIA, semantic state classes, and coordinates; it never contains a screenshot. App evidence may contain only a window screenshot.
+Browser evidence contains only a sanitized, length-bounded HTML fragment from the selected page region; it preserves relevant hierarchy, visible text, complete class values, ARIA/data-* attributes, and relative data-awaitcue-rect coordinates, and it never contains a screenshot. App evidence may contain only a window screenshot.
+Interpret the supplied HTML as a whole. Do not assume AwaitCue has already mapped class tokens or status words to a business outcome, and do not require a site-specific class vocabulary.
 Do not treat the Condition text itself as observed evidence.
 Return matched only with clear positive evidence, notMatched only with clear contradictory or pending evidence, and uncertain when the target state cannot be determined reliably.
 Absence of a success signal is not proof of failure or pending work. Text such as unknown, unavailable, no recent status, or missing status requires uncertain unless another reliable signal resolves it.

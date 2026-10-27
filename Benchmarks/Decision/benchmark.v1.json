@@ -133,6 +133,16 @@
       "evidence": { "image": "fixtures/images/condition-duplicate.png" }
     },
     {
+      "id": "condition-browser-expanded-region-conflict",
+      "kind": "condition",
+      "expected": "uncertain",
+      "condition": "The production deployment is complete.",
+      "tags": ["browser", "dom-only", "uncertain", "scenario:expanded-region-conflict"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-expanded-region-conflict.txt"
+      }
+    },
+    {
       "id": "condition-browser-input-text-not-fact",
       "kind": "condition",
       "expected": "notMatched",
@@ -176,6 +186,16 @@
       "tags": ["browser", "dom-only", "scenario:queued"],
       "evidence": {
         "textFile": "fixtures/dom/condition-queued.txt"
+      }
+    },
+    {
+      "id": "condition-browser-pipeline-pending-html",
+      "kind": "condition",
+      "expected": "notMatched",
+      "condition": "全流量部署完成。",
+      "tags": ["browser", "dom-only", "negative", "scenario:pipeline-pending-html"],
+      "evidence": {
+        "textFile": "fixtures/dom/condition-pipeline-pending.html"
       }
     },
     {

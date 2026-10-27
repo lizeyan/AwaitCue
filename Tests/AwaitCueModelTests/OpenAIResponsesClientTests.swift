@@ -13,7 +13,7 @@ struct OpenAIResponsesClientTests {
             return try stubbedResponse(
                 for: request,
                 statusCode: 200,
-                body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"构建状态显示成功\",\"requiredEvidence\":\"domAndImage\",\"currentDecision\":\"notMatched\",\"confidence\":0.82}"}]}]}"#
+                body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"当构建状态显示成功时\",\"requiredEvidence\":\"domAndImage\",\"currentDecision\":\"notMatched\",\"confidence\":0.82}"}]}]}"#
             )
         }
         let client = OpenAIResponsesClient(
@@ -32,7 +32,7 @@ struct OpenAIResponsesClientTests {
 
         #expect(
             result == PreparedCondition(
-                confirmedSummary: "构建状态显示成功",
+                confirmedSummary: "当构建状态显示成功时",
                 requiredEvidence: .domAndImage,
                 currentDecision: .notMatched,
                 confidence: 0.82
@@ -45,10 +45,20 @@ struct OpenAIResponsesClientTests {
         #expect(reasoning["effort"] as? String == "none")
         let instructions = try #require(body["instructions"] as? String)
         #expect(instructions.contains("缺少状态不等于条件未满足"))
+        #expect(instructions.contains("confirmedSummary 只描述以后要观察的提醒条件"))
+        #expect(instructions.contains("currentDecision 才表示当前证据的判断"))
         let text = try #require(body["text"] as? [String: Any])
         let format = try #require(text["format"] as? [String: Any])
         #expect(format["name"] as? String == "condition_preparation")
         #expect(format["strict"] as? Bool == true)
+        let schema = try #require(format["schema"] as? [String: Any])
+        let properties = try #require(schema["properties"] as? [String: Any])
+        let summary = try #require(properties["confirmedSummary"] as? [String: Any])
+        let decision = try #require(properties["currentDecision"] as? [String: Any])
+        let confidence = try #require(properties["confidence"] as? [String: Any])
+        #expect((summary["description"] as? String)?.contains("提醒条件") == true)
+        #expect((decision["description"] as? String)?.contains("当前证据") == true)
+        #expect((confidence["description"] as? String)?.contains("currentDecision") == true)
     }
 
     @Test("条件判断发送图片、关闭服务端存储并使用严格 JSON Schema")
@@ -118,6 +128,61 @@ struct OpenAIResponsesClientTests {
         let schema = try #require(format["schema"] as? [String: Any])
         #expect(schema["additionalProperties"] as? Bool == false)
         #expect(Set(schema["required"] as? [String] ?? []) == ["decision", "confidence"])
+    }
+
+    @Test("横向扩大范围提示进入创建分析和运行判断的真实 Responses 请求")
+    func expandedSelectionGuidanceReachesBothConditionRequests() async throws {
+        let guidance = """
+        读取范围提示：浏览器侧栏导致读取范围横向扩大，可能包含用户原框选区域左右相邻的页面内容。只有目标状态能够唯一对应，或读取范围内相关证据一致时，才可判断 matched；证据冲突时必须判断 uncertain。
+        """
+        let preparationRecorder = RequestRecorder()
+        let preparationClient = OpenAIResponsesClient(
+            baseURL: URL(string: "https://model.example/v1")!,
+            apiKey: "test-key",
+            model: "decision-model",
+            session: makeStubbedSession { request in
+                preparationRecorder.record(request)
+                return try stubbedResponse(
+                    for: request,
+                    statusCode: 200,
+                    body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"confirmedSummary\":\"当目标部署完成时\",\"requiredEvidence\":\"dom\",\"currentDecision\":\"uncertain\",\"confidence\":0.5}"}]}]}"#
+                )
+            }
+        )
+
+        _ = try await preparationClient.prepareCondition(
+            ConditionPreparationRequest(
+                originalText: "部署完成时提醒我",
+                evidence: ModelEvidence(domText: "\(guidance)\n[10,20] 部署成功\n[300,20] 部署运行中")
+            )
+        )
+        #expect(try requestInputText(preparationRecorder.request).contains(guidance))
+
+        let evaluationRecorder = RequestRecorder()
+        let evaluationClient = OpenAIResponsesClient(
+            baseURL: URL(string: "https://model.example/v1")!,
+            apiKey: "test-key",
+            model: "decision-model",
+            session: makeStubbedSession { request in
+                evaluationRecorder.record(request)
+                return try stubbedResponse(
+                    for: request,
+                    statusCode: 200,
+                    body: #"{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"decision\":\"uncertain\",\"confidence\":0.5}"}]}]}"#
+                )
+            }
+        )
+        _ = try await evaluationClient.evaluateCondition(
+            ConditionEvaluationRequest(
+                condition: ConditionDefinition(
+                    originalText: "部署完成时提醒我",
+                    confirmedSummary: "当目标部署完成时",
+                    requiredEvidence: .dom
+                ),
+                evidence: ModelEvidence(domText: guidance)
+            )
+        )
+        #expect(try requestInputText(evaluationRecorder.request).contains(guidance))
     }
 
     @Test("完整 Responses endpoint 不会重复追加路径")
@@ -466,6 +531,15 @@ private func fixtureConditionRequest() -> ConditionEvaluationRequest {
         ),
         evidence: ModelEvidence(text: "Build complete")
     )
+}
+
+private func requestInputText(_ request: URLRequest?) throws -> String {
+    let request = try #require(request)
+    let bodyData = try #require(request.httpBody)
+    let body = try #require(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+    let input = try #require(body["input"] as? [[String: Any]])
+    let content = try #require(input.first?["content"] as? [[String: Any]])
+    return content.compactMap { $0["text"] as? String }.joined(separator: "\n")
 }
 
 private final class RequestRecorder: @unchecked Sendable {

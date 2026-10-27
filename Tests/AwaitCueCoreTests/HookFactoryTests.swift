@@ -105,6 +105,39 @@ struct HookFactoryTests {
         #expect(String(decoding: encoded, as: UTF8.self) == "\"dom\"")
     }
 
+    @Test("旧浏览器目标缺少扩大范围字段时按未扩大解码")
+    func legacyBrowserTargetDefaultsToUnexpandedRegion() throws {
+        let legacyJSON = #"""
+        {
+          "browserBundleIdentifier": "com.google.Chrome",
+          "nativeWindowIdentifier": 11,
+          "extensionInstallationID": "extension-id",
+          "tabIdentifier": 12,
+          "host": "example.com",
+          "initialURL": "https:\/\/example.com\/build",
+          "initialTitle": "Build",
+          "normalizedRegion": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4},
+          "observationMode": "dom"
+        }
+        """#
+
+        let decoded = try JSONDecoder().decode(BrowserTarget.self, from: Data(legacyJSON.utf8))
+
+        #expect(!decoded.selectionRegionExpanded)
+        let newlyCreated = BrowserTarget(
+            browserBundleIdentifier: "com.google.Chrome",
+            nativeWindowIdentifier: 11,
+            extensionInstallationID: "extension-id",
+            tabIdentifier: 12,
+            host: "example.com",
+            initialURL: URL(string: "https://example.com/build")!,
+            initialTitle: "Build",
+            normalizedRegion: NormalizedRegion(x: 0.1, y: 0.2, width: 0.3, height: 0.4),
+            observationMode: .dom
+        )
+        #expect(!newlyCreated.selectionRegionExpanded)
+    }
+
     @Test("浏览器扩展安装入口覆盖受支持浏览器并使用稳定身份")
     func browserExtensionInstallDestinationsAreStable() {
         #expect(BrowserExtensionFamily.allCases.map(\.displayName) == [

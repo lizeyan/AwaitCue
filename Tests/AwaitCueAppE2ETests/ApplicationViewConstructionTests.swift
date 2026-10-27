@@ -28,4 +28,39 @@ struct ApplicationViewConstructionTests {
         _ = HookCreationView(model: fixture.model).body
         _ = AwaitCueMenuView(model: fixture.model, openSettings: {}).body
     }
+
+    @MainActor
+    @Test("横向扩大浏览器读取范围时创建界面显示风险提示")
+    func expandedBrowserSelectionShowsCreationWarning() throws {
+        let fixture = try IsolatedApplicationModelFixture()
+        defer { fixture.cleanup() }
+        fixture.model.pendingTarget = .browser(
+            BrowserTarget(
+                browserBundleIdentifier: "com.google.Chrome",
+                nativeWindowIdentifier: 42,
+                extensionInstallationID: "installation-1",
+                tabIdentifier: 7,
+                host: "example.com",
+                initialURL: URL(string: "https://example.com/build")!,
+                initialTitle: "Build dashboard",
+                normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1),
+                observationMode: .dom,
+                selectionRegionExpanded: true
+            )
+        )
+
+        let expandedView = HookCreationView(model: fixture.model)
+        #expect(expandedView.showsExpandedSelectionWarning)
+
+        fixture.model.pendingTarget = .window(
+            WindowTarget(
+                applicationBundleIdentifier: "com.example.Editor",
+                windowIdentifier: 1,
+                initialTitle: "Document",
+                normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1)
+            )
+        )
+        let regularView = HookCreationView(model: fixture.model)
+        #expect(!regularView.showsExpandedSelectionWarning)
+    }
 }
