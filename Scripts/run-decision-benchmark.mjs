@@ -19,10 +19,14 @@ async function main() {
     "Benchmarks/Decision/benchmark.v1.json",
   ));
   const manifestSource = await readFile(manifestPath, "utf8");
-  const manifest = validateBenchmarkManifest(
+  const validatedManifest = validateBenchmarkManifest(
     JSON.parse(manifestSource),
     path.dirname(manifestPath),
   );
+  const manifest = {
+    ...validatedManifest,
+    cases: selectCases(validatedManifest.cases, options.kind),
+  };
   if (options.dryRun) {
     for (const entry of manifest.cases) await loadEvidence(entry.evidence);
     console.log(`Validated ${manifest.cases.length} decision benchmark cases.`);
@@ -46,7 +50,7 @@ async function main() {
     interruptibilityInstructions: await readFile(
       path.resolve(options.interruptibilityPrompt ?? path.join(
         repositoryRoot,
-        "Benchmarks/Decision/prompts/interruptibility.txt",
+        "Sources/AwaitCueModel/Resources/interruptibility.txt",
       )),
       "utf8",
     ),
@@ -64,6 +68,8 @@ async function main() {
       id: entry.id,
       kind: entry.kind,
       expected: entry.expected,
+      description: entry.description,
+      tags: entry.tags,
       samples,
     });
     const correct = samples.filter(({ outcome }) => outcome === entry.expected).length;
@@ -104,12 +110,20 @@ function parseArguments(argumentsList) {
     else if (argument === "--model") options.model = nextValue(argumentsList, ++index, argument);
     else if (argument === "--condition-prompt") options.conditionPrompt = nextValue(argumentsList, ++index, argument);
     else if (argument === "--interruptibility-prompt") options.interruptibilityPrompt = nextValue(argumentsList, ++index, argument);
+    else if (argument === "--kind") options.kind = decisionKind(nextValue(argumentsList, ++index, argument), argument);
     else if (argument === "--repetitions") options.repetitions = positiveNumber(nextValue(argumentsList, ++index, argument), argument);
     else if (argument === "--minimum-accuracy") options.minimumAccuracy = rate(nextValue(argumentsList, ++index, argument), argument);
     else if (argument === "--minimum-stability") options.minimumStability = rate(nextValue(argumentsList, ++index, argument), argument);
     else throw new Error(`unknown argument: ${argument}`);
   }
   return options;
+}
+
+/** 仅选择用户要求评估的决策类型，避免本地回测额外消耗无关模型请求。 */
+function selectCases(cases, kind) {
+  const selected = kind ? cases.filter((entry) => entry.kind === kind) : cases;
+  if (selected.length === 0) throw new Error(`no benchmark cases selected for kind: ${kind}`);
+  return selected;
 }
 
 function nextValue(argumentsList, index, option) {
@@ -130,6 +144,13 @@ function rate(value, option) {
     throw new Error(`${option} must be between 0 and 1`);
   }
   return parsed;
+}
+
+function decisionKind(value, option) {
+  if (value !== "condition" && value !== "interruptibility") {
+    throw new Error(`${option} must be condition or interruptibility`);
+  }
+  return value;
 }
 
 main().catch((error) => {

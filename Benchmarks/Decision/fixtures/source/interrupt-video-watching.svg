@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <rect width="800" height="450" fill="#050505"/>
+  <rect x="18" y="18" width="764" height="414" fill="#101827"/>
+  <rect x="58" y="54" width="684" height="294" rx="8" fill="#1e293b"/>
+  <circle cx="400" cy="192" r="72" fill="#334155"/>
+  <path d="M374 153c34-22 74 2 72 42-2 34-41 53-72 30z" fill="#94a3b8"/>
+  <text x="84" y="88" font-family="-apple-system,sans-serif" font-size="16" fill="#f8fafc">Lecture 6 · distributed queues</text>
+  <rect x="58" y="348" width="684" height="5" fill="#475569"/><rect x="58" y="348" width="397" height="5" fill="#ef4444"/>
+  <text x="64" y="388" font-family="-apple-system,sans-serif" font-size="16" fill="#f8fafc">28:14 / 48:03</text>
+  <rect x="343" y="370" width="114" height="40" rx="20" fill="#0f172a" stroke="#64748b"/>
+  <rect x="372" y="380" width="8" height="20" fill="#fff"/><rect x="388" y="380" width="8" height="20" fill="#fff"/>
+  <text x="415" y="396" font-family="-apple-system,sans-serif" font-size="14" fill="#fff">Playing</text>
+  <text x="610" y="388" font-family="-apple-system,sans-serif" font-size="15" fill="#cbd5e1">Full screen</text>
+</svg>

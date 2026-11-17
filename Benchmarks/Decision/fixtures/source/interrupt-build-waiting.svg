@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <rect width="800" height="450" fill="#f4f6f8"/>
+  <rect x="28" y="24" width="744" height="402" rx="12" fill="#fff" stroke="#cbd5e1"/>
+  <rect x="28" y="24" width="744" height="54" rx="12" fill="#eef2f7"/>
+  <circle cx="54" cy="51" r="7" fill="#ef4444"/><circle cx="78" cy="51" r="7" fill="#f59e0b"/><circle cx="102" cy="51" r="7" fill="#22c55e"/>
+  <text x="132" y="59" font-family="-apple-system,sans-serif" font-size="18" fill="#334155">Release pipeline</text>
+  <text x="62" y="126" font-family="-apple-system,sans-serif" font-size="28" font-weight="700" fill="#0f172a">Production deployment</text>
+  <text x="62" y="158" font-family="-apple-system,sans-serif" font-size="17" fill="#64748b">Automated run #1842</text>
+  <rect x="62" y="196" width="676" height="62" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <circle cx="92" cy="227" r="11" fill="none" stroke="#2563eb" stroke-width="5" stroke-dasharray="38 22"/>
+  <text x="120" y="222" font-family="-apple-system,sans-serif" font-size="18" font-weight="600" fill="#1e293b">Deploy services</text>
+  <text x="120" y="245" font-family="-apple-system,sans-serif" font-size="15" fill="#64748b">Running for 8m 14s</text>
+  <rect x="62" y="292" width="676" height="12" rx="6" fill="#dbeafe"/><rect x="62" y="292" width="459" height="12" rx="6" fill="#2563eb"/>
+  <text x="62" y="344" font-family="-apple-system,sans-serif" font-size="17" fill="#475569">No action is required while the automated deployment runs.</text>
+  <text x="62" y="390" font-family="-apple-system,sans-serif" font-size="15" fill="#94a3b8">Last refreshed 42 seconds ago</text>
+</svg>

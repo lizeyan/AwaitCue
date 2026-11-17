@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <rect width="800" height="450" fill="#eef2f6"/>
+  <rect x="26" y="24" width="748" height="402" rx="12" fill="#fff" stroke="#cbd5e1"/>
+  <rect x="26" y="24" width="188" height="402" rx="12" fill="#f8fafc"/>
+  <text x="54" y="70" font-family="-apple-system,sans-serif" font-size="24" font-weight="700" fill="#1f2937">Inbox</text>
+  <text x="54" y="118" font-family="-apple-system,sans-serif" font-size="17" fill="#475569">Inbox  12</text>
+  <text x="54" y="154" font-family="-apple-system,sans-serif" font-size="17" fill="#475569">Starred</text>
+  <text x="54" y="190" font-family="-apple-system,sans-serif" font-size="17" fill="#475569">Sent</text>
+  <text x="246" y="72" font-family="-apple-system,sans-serif" font-size="16" fill="#64748b">Mara Chen · 10:32 AM</text>
+  <text x="246" y="116" font-family="-apple-system,sans-serif" font-size="29" font-weight="700" fill="#111827">Notes from yesterday's review</text>
+  <line x1="246" y1="142" x2="736" y2="142" stroke="#e5e7eb"/>
+  <text x="246" y="190" font-family="Georgia,serif" font-size="19" fill="#374151">Hi team, here is a short recap of the decisions.</text>
+  <text x="246" y="228" font-family="Georgia,serif" font-size="19" fill="#374151">The release remains scheduled for Thursday morning.</text>
+  <text x="246" y="266" font-family="Georgia,serif" font-size="19" fill="#374151">No response is needed unless something looks incorrect.</text>
+  <text x="246" y="338" font-family="-apple-system,sans-serif" font-size="16" fill="#94a3b8">Reply composer closed</text>
+</svg>

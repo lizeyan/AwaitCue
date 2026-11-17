@@ -70,6 +70,7 @@
       "id": "interruptibility-active-article-reading",
       "kind": "interruptibility",
       "expected": "interruptible",
+      "description": "普通文章阅读不需要维持连续操作，按产品约定可以打断。",
       "tags": ["active-window", "screen-evidence", "article", "scenario:article-reading"],
       "evidence": {
         "text": "前台应用：Safari\n窗口标题：Why city trees matter\n距最近输入约：18 秒",
@@ -80,6 +81,7 @@
       "id": "interruptibility-active-code-debugging",
       "kind": "interruptibility",
       "expected": "notInterruptible",
+      "description": "断点调试和线上故障排查需要持续关注，不应打断。",
       "tags": ["active-window", "screen-evidence", "focused-work", "scenario:code-debugging"],
       "evidence": {
         "text": "前台应用：Xcode\n窗口标题：PaymentService — Debugger paused\n距最近输入约：2 秒",
@@ -90,6 +92,7 @@
       "id": "interruptibility-active-mixed-focus-unknown",
       "kind": "interruptibility",
       "expected": "uncertain",
+      "description": "代码和文章同时可见但没有可靠焦点信息，无法判断用户当前正在做哪件事。",
       "tags": ["active-window", "screen-evidence", "uncertain", "scenario:mixed-focus-unknown"],
       "evidence": {
         "text": "前台应用：Window Manager\n窗口标题：Mixed workspace\n距最近输入约：4 秒",
@@ -210,6 +213,7 @@
       "id": "interruptibility-active-meeting",
       "kind": "interruptibility",
       "expected": "notInterruptible",
+      "description": "会议正在进行且用户可能正在参与，不应打断。",
       "tags": ["active-window", "screen-evidence", "scenario:meeting"],
       "evidence": {
         "text": "前台应用：Feishu\n窗口标题：Weekly incident review\n距最近输入约：1 秒",
@@ -220,6 +224,7 @@
       "id": "interruptibility-active-presentation",
       "kind": "interruptibility",
       "expected": "notInterruptible",
+      "description": "全屏演示和屏幕共享需要连续注意力，不应打断。",
       "tags": ["active-window", "screen-evidence", "scenario:presentation"],
       "evidence": {
         "text": "前台应用：Keynote\n窗口标题：Quarterly launch — Playing\n距最近输入约：2 秒",
@@ -230,6 +235,7 @@
       "id": "interruptibility-active-document-writing",
       "kind": "interruptibility",
       "expected": "notInterruptible",
+      "description": "文档存在未保存修改和输入光标，用户正在写作，不应打断。",
       "tags": ["active-window", "screen-evidence", "scenario:document-writing"],
       "evidence": {
         "text": "前台应用：Pages\n窗口标题：Launch plan\n距最近输入约：1 秒",
@@ -240,10 +246,110 @@
       "id": "interruptibility-active-chat-reading",
       "kind": "interruptibility",
       "expected": "interruptible",
+      "description": "聊天窗口没有草稿且已经停止输入，用户只是在阅读消息，可以打断。",
       "tags": ["active-window", "screen-evidence", "scenario:chat-reading"],
       "evidence": {
         "text": "前台应用：微信\n窗口标题：项目群\n距最近输入约：30 秒",
         "image": "fixtures/images/interrupt-chat.png"
+      }
+    },
+    {
+      "id": "interruptibility-active-build-waiting",
+      "kind": "interruptibility",
+      "expected": "interruptible",
+      "description": "自动部署正在运行且页面明确无需用户操作，等待期间可以打断。",
+      "tags": ["active-window", "screen-evidence", "web", "scenario:build-waiting"],
+      "evidence": {
+        "text": "前台应用：Google Chrome\n窗口标题：Release pipeline\n距最近输入约：45 秒",
+        "image": "fixtures/images/interrupt-build-waiting.png"
+      }
+    },
+    {
+      "id": "interruptibility-active-email-reading",
+      "kind": "interruptibility",
+      "expected": "interruptible",
+      "description": "邮件正文仅供阅读且回复框未打开，没有需要保持的输入上下文，可以打断。",
+      "tags": ["active-window", "screen-evidence", "email", "scenario:email-reading"],
+      "evidence": {
+        "text": "前台应用：Mail\n窗口标题：Notes from yesterday's review\n距最近输入约：35 秒",
+        "image": "fixtures/images/interrupt-email-reading.png"
+      }
+    },
+    {
+      "id": "interruptibility-active-settings-browsing",
+      "kind": "interruptibility",
+      "expected": "interruptible",
+      "description": "设置页没有未保存修改，当前只是浏览选项，可以打断。",
+      "tags": ["active-window", "screen-evidence", "settings", "scenario:settings-browsing"],
+      "evidence": {
+        "text": "前台应用：System Settings\n窗口标题：Appearance\n距最近输入约：22 秒",
+        "image": "fixtures/images/interrupt-settings-browsing.png"
+      }
+    },
+    {
+      "id": "interruptibility-active-music-playing",
+      "kind": "interruptibility",
+      "expected": "interruptible",
+      "description": "音乐播放属于被动活动，界面没有搜索或编辑操作，可以打断。",
+      "tags": ["active-window", "screen-evidence", "media", "scenario:music-playing"],
+      "evidence": {
+        "text": "前台应用：Music\n窗口标题：Instrumental Focus\n距最近输入约：40 秒",
+        "image": "fixtures/images/interrupt-music-playing.png"
+      }
+    },
+    {
+      "id": "interruptibility-active-spreadsheet-editing",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "description": "电子表格正在编辑公式且尚未保存，需要保持输入上下文，不应打断。",
+      "tags": ["active-window", "screen-evidence", "focused-work", "scenario:spreadsheet-editing"],
+      "evidence": {
+        "text": "前台应用：Microsoft Excel\n窗口标题：Capacity plan.xlsx\n距最近输入约：1 秒",
+        "image": "fixtures/images/interrupt-spreadsheet-editing.png"
+      }
+    },
+    {
+      "id": "interruptibility-active-chat-drafting",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "description": "聊天输入框中有尚未发送的草稿和光标，用户正在组织文字，不应打断。",
+      "tags": ["active-window", "screen-evidence", "focused-work", "scenario:chat-drafting"],
+      "evidence": {
+        "text": "前台应用：飞书\n窗口标题：Project chat\n距最近输入约：1 秒",
+        "image": "fixtures/images/interrupt-chat-drafting.png"
+      }
+    },
+    {
+      "id": "interruptibility-active-form-filling",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "description": "多步骤表单正在填写且内容尚未保存，需要保持任务上下文，不应打断。",
+      "tags": ["active-window", "screen-evidence", "focused-work", "scenario:form-filling"],
+      "evidence": {
+        "text": "前台应用：Google Chrome\n窗口标题：Create access request\n距最近输入约：2 秒",
+        "image": "fixtures/images/interrupt-form-filling.png"
+      }
+    },
+    {
+      "id": "interruptibility-active-video-watching",
+      "kind": "interruptibility",
+      "expected": "notInterruptible",
+      "description": "全屏视频正在播放，打断会中断连续观看，不应打断。",
+      "tags": ["active-window", "screen-evidence", "media", "scenario:video-watching"],
+      "evidence": {
+        "text": "前台应用：Google Chrome\n窗口标题：Lecture 6 - distributed queues\n距最近输入约：18 秒",
+        "image": "fixtures/images/interrupt-video-watching.png"
+      }
+    },
+    {
+      "id": "interruptibility-active-all-in-one-mixed",
+      "kind": "interruptibility",
+      "expected": "uncertain",
+      "description": "同一个 all-in-one 应用同时显示文档和聊天，界面没有可靠焦点信息，不能猜测用户当前活动。",
+      "tags": ["active-window", "screen-evidence", "uncertain", "scenario:all-in-one-mixed-activity"],
+      "evidence": {
+        "text": "前台应用：飞书\n窗口标题：Launch workspace\n距最近输入约：4 秒",
+        "image": "fixtures/images/interrupt-all-in-one-mixed.png"
       }
     }
   ]

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <rect width="800" height="450" fill="#e9edf2"/>
+  <rect x="62" y="28" width="676" height="394" rx="14" fill="#fff" stroke="#cbd5e1"/>
+  <rect x="62" y="28" width="190" height="394" rx="14" fill="#f1f5f9"/>
+  <text x="92" y="76" font-family="-apple-system,sans-serif" font-size="23" font-weight="700" fill="#111827">Settings</text>
+  <rect x="80" y="104" width="154" height="42" rx="8" fill="#dbeafe"/>
+  <text x="98" y="132" font-family="-apple-system,sans-serif" font-size="17" fill="#1d4ed8">Appearance</text>
+  <text x="98" y="178" font-family="-apple-system,sans-serif" font-size="17" fill="#475569">Notifications</text>
+  <text x="98" y="220" font-family="-apple-system,sans-serif" font-size="17" fill="#475569">Privacy</text>
+  <text x="286" y="82" font-family="-apple-system,sans-serif" font-size="28" font-weight="700" fill="#111827">Appearance</text>
+  <text x="286" y="132" font-family="-apple-system,sans-serif" font-size="17" fill="#475569">Theme</text>
+  <rect x="286" y="152" width="414" height="48" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="306" y="183" font-family="-apple-system,sans-serif" font-size="17" fill="#1f2937">Use system setting</text>
+  <text x="286" y="246" font-family="-apple-system,sans-serif" font-size="17" fill="#475569">Text size</text>
+  <line x1="286" y1="286" x2="650" y2="286" stroke="#cbd5e1" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="492" cy="286" r="12" fill="#2563eb"/>
+  <text x="286" y="352" font-family="-apple-system,sans-serif" font-size="15" fill="#94a3b8">No unsaved changes</text>
+</svg>

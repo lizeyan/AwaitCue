@@ -32,7 +32,8 @@ let package = Package(
         ),
         .target(
             name: "AwaitCueModel",
-            dependencies: ["AwaitCueCore"]
+            dependencies: ["AwaitCueCore"],
+            resources: [.process("Resources")]
         ),
         .target(
             name: "AwaitCuePersistence",

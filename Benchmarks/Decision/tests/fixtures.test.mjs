@@ -13,7 +13,7 @@ test("canonical fixtures cover every decision and evidence surface without secre
   const source = await readFile(manifestPath, "utf8");
   assert.doesNotMatch(source, /(api[_-]?key|bearer\s+|bytedance\.net|aidp\.)/i);
   const manifest = validateBenchmarkManifest(JSON.parse(source), benchmarkDirectory);
-  assert.equal(manifest.cases.length, 26);
+  assert.equal(manifest.cases.length, 35);
   const requiredScenarios = new Set([
     "scenario:overall-failed-local-success",
     "scenario:duplicate-name-conflict",
@@ -31,6 +31,15 @@ test("canonical fixtures cover every decision and evidence surface without secre
     "scenario:chat-reading",
     "scenario:mixed-focus-unknown",
     "scenario:no-semantic-content",
+    "scenario:build-waiting",
+    "scenario:email-reading",
+    "scenario:settings-browsing",
+    "scenario:music-playing",
+    "scenario:spreadsheet-editing",
+    "scenario:chat-drafting",
+    "scenario:form-filling",
+    "scenario:video-watching",
+    "scenario:all-in-one-mixed-activity",
   ]);
   const actualScenarios = new Set(
     manifest.cases.flatMap((entry) => entry.tags.filter((tag) => tag.startsWith("scenario:"))),
@@ -87,4 +96,9 @@ test("canonical fixtures cover every decision and evidence surface without secre
   assert.match(pipelineHTML, /aria-(?:label|hidden)="[^"]+"/);
   assert.doesNotMatch(pipelineHTML, /^\[[^\]]+\]\s+class:/m);
   assert.deepEqual(actualCases, expectedCases);
+  const interruptionCases = manifest.cases.filter((entry) => entry.kind === "interruptibility");
+  assert.equal(interruptionCases.length, 16);
+  for (const entry of interruptionCases) {
+    assert.ok(entry.description, `${entry.id} must preserve a human judgment rationale`);
+  }
 });

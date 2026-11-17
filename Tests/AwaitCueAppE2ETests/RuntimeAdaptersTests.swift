@@ -1,12 +1,142 @@
 import AwaitCueCapture
 import AwaitCueCore
 import AwaitCueRuntime
+import AwaitCueSelection
+import CoreGraphics
 import Foundation
 import Testing
 @testable import AwaitCueApp
 
 @Suite("App Target 可用性 adapter")
 struct RuntimeAdaptersTests {
+    @Test("忙闲证据使用最近任意键鼠输入而不是 null 事件")
+    func activeEvidenceUsesAnyUserInputEvent() {
+        var requestedEventType: CGEventType?
+
+        let seconds = AppActiveEvidenceProvider.secondsSinceLastUserInput { eventType in
+            requestedEventType = eventType
+            return eventType.rawValue == UInt32.max ? 2 : 127_841
+        }
+
+        #expect(seconds == 2)
+        #expect(requestedEventType?.rawValue == UInt32.max)
+    }
+
+    @Test("前台应用命中排除规则时不会读取窗口或截图")
+    func excludedApplicationSkipsAllScreenCaptureOperations() async {
+        let captureCalls = ActiveEvidenceCaptureCallCounter()
+        let provider = AppActiveEvidenceProvider(
+            privacyExclusionStore: AppPrivacyExclusionStore(
+                rules: PrivacyExclusionRules(
+                    applicationBundleIdentifiers: ["com.example.Secret"],
+                    browserHosts: []
+                )
+            ),
+            activeBrowserHostResolver: FixedActiveBrowserHostResolver(
+                resolution: .notBrowser
+            ),
+            frontmostApplication: {
+                ActiveApplicationSnapshot(
+                    bundleIdentifier: "com.example.Secret",
+                    localizedName: "Secret"
+                )
+            },
+            discoverWindows: {
+                await captureCalls.recordDiscovery()
+                return []
+            },
+            captureWindow: { _ in
+                await captureCalls.recordCapture()
+                throw AdapterFixtureError.failed
+            }
+        )
+
+        await #expect(throws: HookRuntimeEvidenceError.locallyExcluded) {
+            try await provider.currentEvidence()
+        }
+        #expect(await captureCalls.discoveryCount == 0)
+        #expect(await captureCalls.captureCount == 0)
+    }
+
+    @Test("浏览器 host 命中排除规则时不会读取窗口或截图")
+    func excludedBrowserHostSkipsAllScreenCaptureOperations() async {
+        let captureCalls = ActiveEvidenceCaptureCallCounter()
+        let provider = AppActiveEvidenceProvider(
+            privacyExclusionStore: AppPrivacyExclusionStore(
+                rules: PrivacyExclusionRules(
+                    applicationBundleIdentifiers: [],
+                    browserHosts: ["secret.example"]
+                )
+            ),
+            activeBrowserHostResolver: FixedActiveBrowserHostResolver(
+                resolution: .resolved(
+                    ActiveBrowserContext(
+                        extensionInstallationID: "installation-1",
+                        tabIdentifier: 7,
+                        browserWindowIdentifier: 42,
+                        host: "secret.example"
+                    )
+                )
+            ),
+            frontmostApplication: {
+                ActiveApplicationSnapshot(
+                    bundleIdentifier: "com.google.Chrome",
+                    localizedName: "Google Chrome"
+                )
+            },
+            discoverWindows: {
+                await captureCalls.recordDiscovery()
+                return []
+            },
+            captureWindow: { _ in
+                await captureCalls.recordCapture()
+                throw AdapterFixtureError.failed
+            }
+        )
+
+        await #expect(throws: HookRuntimeEvidenceError.locallyExcluded) {
+            try await provider.currentEvidence()
+        }
+        #expect(await captureCalls.discoveryCount == 0)
+        #expect(await captureCalls.captureCount == 0)
+    }
+
+    @Test("配置了 host 排除但浏览器身份无法确认时保守跳过截图")
+    func unresolvedBrowserHostSkipsAllScreenCaptureOperations() async {
+        let captureCalls = ActiveEvidenceCaptureCallCounter()
+        let provider = AppActiveEvidenceProvider(
+            privacyExclusionStore: AppPrivacyExclusionStore(
+                rules: PrivacyExclusionRules(
+                    applicationBundleIdentifiers: [],
+                    browserHosts: ["secret.example"]
+                )
+            ),
+            activeBrowserHostResolver: FixedActiveBrowserHostResolver(
+                resolution: .unavailable
+            ),
+            frontmostApplication: {
+                ActiveApplicationSnapshot(
+                    bundleIdentifier: "com.google.Chrome",
+                    localizedName: "Google Chrome"
+                )
+            },
+            discoverWindows: {
+                await captureCalls.recordDiscovery()
+                return []
+            },
+            captureWindow: { _ in
+                await captureCalls.recordCapture()
+                throw AdapterFixtureError.failed
+            }
+        )
+
+        await #expect(throws: HookRuntimeEvidenceError.locallyExcluded) {
+            try await provider.currentEvidence()
+        }
+        #expect(await captureCalls.discoveryCount == 0)
+        #expect(await captureCalls.captureCount == 0)
+    }
+
     @Test("Delay Hook 的窗口最小化仍可继续等待通知")
     func minimizedWindowRemainsAvailable() async {
         let provider = AppTargetAvailabilityProvider(
@@ -131,6 +261,29 @@ private struct FixedWindowTargetChecker: WindowTargetAvailabilityChecking {
 
     func availability(of target: WindowTarget) async throws -> WindowTargetAvailability {
         try result.get()
+    }
+}
+
+private struct FixedActiveBrowserHostResolver: ActiveBrowserHostResolving {
+    let resolution: ActiveBrowserHostResolution
+
+    func resolveActiveBrowserHost(
+        for browserBundleIdentifier: String
+    ) async throws -> ActiveBrowserHostResolution {
+        resolution
+    }
+}
+
+private actor ActiveEvidenceCaptureCallCounter {
+    private(set) var discoveryCount = 0
+    private(set) var captureCount = 0
+
+    func recordDiscovery() {
+        discoveryCount += 1
+    }
+
+    func recordCapture() {
+        captureCount += 1
     }
 }
 
