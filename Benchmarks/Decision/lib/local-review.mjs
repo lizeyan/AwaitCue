@@ -327,6 +327,15 @@ export function createReviewedReplayReport(plan, results, configuration, baselin
           (entry) => ({ ...entry, stability: null }),
         ),
       },
+    confidenceSummary: summarizeReplayConfidence(plan.samples, resultsByID),
+    promptVerifiedConfidenceSummary: promptVerifiedCases == null
+      ? null
+      : summarizeReplayConfidence(
+        plan.samples.filter(
+          (sample) => sample.id >= plan.sourceRun.baselinePromptValidFromSampleID,
+        ),
+        resultsByID,
+      ),
     pairedComparison: summarizePairedReplay(plan.samples, baselineByID, resultsByID),
     promptVerifiedPairedComparison:
       plan.sourceRun.baselinePromptValidFromSampleID == null
@@ -352,6 +361,28 @@ export function createReviewedReplayReport(plan, results, configuration, baselin
         correct: result.outcome === sample.expected,
       };
     }),
+  };
+}
+
+/** 与生产比较报告采用同一置信度口径，模型失败不进入平均值。 */
+function summarizeReplayConfidence(samples, resultsByID) {
+  const decisions = samples.flatMap((sample) => {
+    const result = resultsByID.get(sample.id);
+    if (!validHumanDecisions.has(result.outcome)) return [];
+    return [{
+      confidence: result.confidence,
+      correct: result.outcome === sample.expected,
+    }];
+  });
+  const correct = decisions.filter(({ correct: isCorrect }) => isCorrect);
+  const incorrect = decisions.filter(({ correct: isCorrect }) => !isCorrect);
+  return {
+    validDecisionCount: decisions.length,
+    correctDecisionCount: correct.length,
+    incorrectDecisionCount: incorrect.length,
+    mean: confidenceMean(decisions),
+    meanCorrect: confidenceMean(correct),
+    meanIncorrect: confidenceMean(incorrect),
   };
 }
 
@@ -542,7 +573,9 @@ function summarizeConfidence(reviewedSamples, samplesByID) {
 
 function confidenceMean(entries) {
   if (entries.length === 0) return null;
-  return entries.reduce((sum, entry) => sum + entry.confidence, 0) / entries.length;
+  const mean = entries.reduce((sum, entry) => sum + entry.confidence, 0) / entries.length;
+  // JSON 报告用于稳定回归比较；消除二进制浮点噪声，但保留模型置信度的有效精度。
+  return Number(mean.toFixed(12));
 }
 
 function validateCompletedRun(run, samples) {

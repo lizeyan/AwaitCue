@@ -156,6 +156,22 @@ test("候选回放单独汇总生产 prompt 有效边界内的准确率", () => 
   assert.equal(report.promptVerifiedSummary.caseCount, 1);
   assert.equal(report.promptVerifiedSummary.accuracy, 1);
   assert.equal(report.promptVerifiedSummary.cases[0].id, "0002");
+  assert.deepEqual(report.confidenceSummary, {
+    validDecisionCount: 2,
+    correctDecisionCount: 1,
+    incorrectDecisionCount: 1,
+    mean: 0.85,
+    meanCorrect: 0.9,
+    meanIncorrect: 0.8,
+  });
+  assert.deepEqual(report.promptVerifiedConfidenceSummary, {
+    validDecisionCount: 1,
+    correctDecisionCount: 1,
+    incorrectDecisionCount: 0,
+    mean: 0.9,
+    meanCorrect: 0.9,
+    meanIncorrect: null,
+  });
 });
 
 test("提前标记完成的 run 不能冒充完整 24 小时采样", () => {
@@ -513,7 +529,7 @@ test("比较报告分别汇总正确与错误判断的平均置信度", () => {
     validDecisionCount: 3,
     correctDecisionCount: 2,
     incorrectDecisionCount: 1,
-    mean: (0.9 + 0.8 + 0.6) / 3,
+    mean: 0.766666666667,
     meanCorrect: (0.9 + 0.6) / 2,
     meanIncorrect: 0.8,
   });

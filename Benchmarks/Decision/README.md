@@ -196,7 +196,9 @@ samples are not misattributed to the current production prompt. Run and sample r
 inside the review plan for integrity checks and are not copied into the replay report.
 `promptVerifiedSummary` likewise reports the candidate's own accuracy, latency, usage, and confusion
 only inside that baseline-valid range, making it directly comparable with the production report's
-field of the same name.
+field of the same name. `confidenceSummary` and `promptVerifiedConfidenceSummary` use the production
+report's same all/correct/incorrect means, so an equally accurate but more overconfident candidate
+is still visible instead of being treated as a neutral change.
 
 The run and samples directories must keep their private `0700` boundary. Original `run.json`,
 sample JSON, and JPEG inputs must also remain regular files with no group or other permissions;
