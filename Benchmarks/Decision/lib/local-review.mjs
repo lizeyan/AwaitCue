@@ -234,6 +234,9 @@ export function createReviewedReplayPlan(run, samples, review) {
     sourceRun: {
       runRecordSHA256: run.runRecordSHA256,
       sampleCount: run.sampleCount,
+      baselinePromptSHA256: run.interruptibilityPromptSHA256 ?? null,
+      baselinePromptValidFromSampleID:
+        run.interruptibilityPromptValidFromSampleID ?? null,
     },
     samples: reviewedSamples.map((reviewed) => ({
       id: reviewed.id,
@@ -250,7 +253,7 @@ export function createReviewedReplayPlan(run, samples, review) {
  * 汇总同一批人工标签上的候选 prompt 结果。
  * 每张真实画面只回放一次，因此不把单次结果伪装成稳定性；Responses usage 仍可如实汇总。
  */
-export function createReviewedReplayReport(plan, results, configuration) {
+export function createReviewedReplayReport(plan, results, configuration, baselineResults) {
   if (plan?.kind !== "interruptibility-reviewed-replay-plan"
       || !Array.isArray(plan.samples)) {
     throw new Error("invalid reviewed replay plan");
@@ -271,6 +274,7 @@ export function createReviewedReplayReport(plan, results, configuration) {
     throw new Error("reviewed replay result IDs do not match the frozen plan");
   }
   const resultsByID = new Map(results.map((result) => [result.id, result]));
+  const baselineByID = validateBaselineReplayResults(plan.samples, baselineResults);
   const benchmarkCases = plan.samples.map((sample) => {
     const result = resultsByID.get(sample.id);
     validateReplayResult(sample.id, result);
@@ -300,6 +304,17 @@ export function createReviewedReplayReport(plan, results, configuration) {
       promptSHA256: configuration.promptSHA256,
     },
     summary: replaySummary,
+    pairedComparison: summarizePairedReplay(plan.samples, baselineByID, resultsByID),
+    promptVerifiedPairedComparison:
+      plan.sourceRun.baselinePromptValidFromSampleID == null
+        ? null
+        : summarizePairedReplay(
+          plan.samples.filter(
+            (sample) => sample.id >= plan.sourceRun.baselinePromptValidFromSampleID,
+          ),
+          baselineByID,
+          resultsByID,
+        ),
     samples: plan.samples.map((sample) => {
       const result = resultsByID.get(sample.id);
       const hasDecision = validHumanDecisions.has(result.outcome);
@@ -315,6 +330,74 @@ export function createReviewedReplayReport(plan, results, configuration) {
       };
     }),
   };
+}
+
+/** 基线只保留稳定 outcome；候选请求永远不会看到采样时模型的答案。 */
+function validateBaselineReplayResults(samples, results) {
+  if (!Array.isArray(results)) {
+    throw new Error("reviewed replay requires baseline results");
+  }
+  const resultIDs = results.map(({ id }) => id);
+  const expectedIDs = samples.map(({ id }) => id);
+  if (new Set(resultIDs).size !== resultIDs.length
+      || resultIDs.length !== expectedIDs.length
+      || [...resultIDs].sort().some((id, index) => id !== [...expectedIDs].sort()[index])) {
+    throw new Error("reviewed replay baseline IDs do not match the frozen plan");
+  }
+  const validOutcomes = new Set([
+    ...validHumanDecisions,
+    "incomplete",
+    "invalid",
+    "error",
+  ]);
+  for (const result of results) {
+    if (!validOutcomes.has(result.outcome)) {
+      throw new Error(`reviewed replay baseline ${result.id} outcome is invalid`);
+    }
+  }
+  return new Map(results.map((result) => [result.id, result]));
+}
+
+/** 配对比较揭示总准确率背后的修复与回归，避免一增一减被汇总数字抵消。 */
+function summarizePairedReplay(samples, baselineByID, candidateByID) {
+  const comparison = {
+    sampleCount: samples.length,
+    bothCorrectCount: 0,
+    bothIncorrectCount: 0,
+    candidateFixedCount: 0,
+    candidateRegressedCount: 0,
+    transitions: {},
+    regressions: [],
+  };
+  for (const sample of samples) {
+    const baseline = baselineByID.get(sample.id).outcome;
+    const candidate = candidateByID.get(sample.id).outcome;
+    const baselineCorrect = baseline === sample.expected;
+    const candidateCorrect = candidate === sample.expected;
+    if (baselineCorrect && candidateCorrect) comparison.bothCorrectCount += 1;
+    else if (!baselineCorrect && !candidateCorrect) comparison.bothIncorrectCount += 1;
+    else if (!baselineCorrect && candidateCorrect) comparison.candidateFixedCount += 1;
+    else {
+      comparison.candidateRegressedCount += 1;
+      comparison.regressions.push({
+        id: sample.id,
+        humanDecision: sample.expected,
+        baselineDecision: baseline,
+        candidateDecision: candidate,
+      });
+    }
+    comparison.transitions[baseline] ??= {};
+    comparison.transitions[baseline][candidate] =
+      (comparison.transitions[baseline][candidate] ?? 0) + 1;
+  }
+  comparison.transitions = Object.fromEntries(
+    Object.entries(comparison.transitions)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([baseline, candidates]) => [baseline, Object.fromEntries(
+        Object.entries(candidates).sort(([left], [right]) => left.localeCompare(right)),
+      )]),
+  );
+  return comparison;
 }
 
 /** 候选回放的单次结果也必须遵循生产三态与可比较耗时契约。 */

@@ -189,7 +189,10 @@ image digest is checked again immediately before the request. The private `0600`
 only labels, model decisions, confidence, stable error categories, end-to-end latency, aggregate
 usage, and accuracy; it omits activity context, image paths, and image digests. Because each real
 screen state is replayed once, stability metrics remain `null` instead of claiming artificial 100%
-stability.
+stability. `pairedComparison` reports samples that the candidate fixed or regressed instead of
+letting opposite changes cancel inside one accuracy number. `promptVerifiedPairedComparison`
+repeats that comparison only from the baseline prompt's recorded validity boundary, so legacy
+samples are not misattributed to the current production prompt.
 
 The run and samples directories must keep their private `0700` boundary. Original `run.json`,
 sample JSON, and JPEG inputs must also remain regular files with no group or other permissions;

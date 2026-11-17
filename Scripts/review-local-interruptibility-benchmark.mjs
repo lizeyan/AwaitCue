@@ -144,11 +144,22 @@ async function main() {
       );
       results.push({ id: sample.id, ...result });
     }
-    const report = createReviewedReplayReport(plan, results, {
-      model: options.model,
-      endpointHost: new URL(options.baseURL).host,
-      promptSHA256,
-    });
+    const report = createReviewedReplayReport(
+      plan,
+      results,
+      {
+        model: options.model,
+        endpointHost: new URL(options.baseURL).host,
+        promptSHA256,
+      },
+      samples.map((sample) => ({
+        id: sample.id,
+        outcome: ["interruptible", "notInterruptible", "uncertain"]
+          .includes(sample.modelDecision)
+          ? sample.modelDecision
+          : (sample.modelError ? "error" : "invalid"),
+      })),
+    );
     assertDistinctOutputPath(options.output, [...inputPaths, reviewPath, promptPath]);
     await writePrivateJSON(options.output, report, {
       exclusive: false,

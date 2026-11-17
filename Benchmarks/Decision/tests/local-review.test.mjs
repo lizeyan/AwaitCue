@@ -93,11 +93,28 @@ test("候选 prompt 回放只接受冻结标签且报告不复制原始证据", 
     model: "decision-model",
     endpointHost: "model.example",
     promptSHA256: "d".repeat(64),
-  });
+  }, [{
+    id: "0001",
+    outcome: "interruptible",
+  }]);
   assert.equal(report.summary.accuracy, 1);
   assert.equal(report.summary.meanCaseStability, null);
   assert.equal(report.summary.tokens.input, 100);
   assert.equal(report.samples[0].correct, true);
+  assert.deepEqual(report.pairedComparison, {
+    sampleCount: 1,
+    bothCorrectCount: 0,
+    bothIncorrectCount: 0,
+    candidateFixedCount: 1,
+    candidateRegressedCount: 0,
+    transitions: {
+      interruptible: { notInterruptible: 1 },
+    },
+    regressions: [],
+  });
+  assert.equal(report.sourceRun.baselinePromptSHA256, "a".repeat(64));
+  assert.equal(report.sourceRun.baselinePromptValidFromSampleID, "0001");
+  assert.deepEqual(report.promptVerifiedPairedComparison, report.pairedComparison);
   assert.doesNotMatch(JSON.stringify(report), /contextText|imageFile|imageSHA256|ChatGPT/);
 });
 
@@ -1241,6 +1258,12 @@ test("命令行从真实采样目录生成私有复核清单并在填写后输�
       const replayReport = JSON.parse(await readFile(replayReportPath, "utf8"));
       assert.equal(replayReport.summary.accuracy, 1);
       assert.equal(replayReport.summary.tokens.input, 123);
+      assert.equal(replayReport.pairedComparison.bothCorrectCount, 1);
+      assert.equal(replayReport.pairedComparison.candidateRegressedCount, 0);
+      assert.deepEqual(
+        replayReport.promptVerifiedPairedComparison,
+        replayReport.pairedComparison,
+      );
       assert.equal(replayReport.samples[0].modelDecision, "notInterruptible");
       assert.equal(replayReport.samples[0].correct, true);
       assert.match(replayReport.configuration.promptSHA256, /^[0-9a-f]{64}$/);
