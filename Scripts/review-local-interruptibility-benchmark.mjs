@@ -294,6 +294,10 @@ async function writePrivateJSON(outputPath, value, { exclusive, protectedInputPa
   }
   try {
     const outputAttributes = await output.stat();
+    // 必须检查已经打开的 FD；预先按路径 lstat 仍可能在打开前被换成硬链接。
+    if (outputAttributes.nlink !== 1) {
+      throw new Error("output file must not have additional hard links");
+    }
     for (const inputPath of protectedInputPaths) {
       const inputAttributes = await lstat(inputPath);
       if (outputAttributes.dev === inputAttributes.dev

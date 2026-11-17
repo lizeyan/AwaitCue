@@ -880,6 +880,28 @@ test("比较报告拒绝人工复核文件的硬链接别名且不覆盖原文�
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /human review must not have additional hard links/);
     assert.equal(await readFile(reviewPath, "utf8"), originalReview);
+
+    await unlink(hardLinkOutput);
+    const unrelatedVictim = path.join(directory, "unrelated-victim.txt");
+    await writeFile(unrelatedVictim, "必须保留的无关内容", { mode: 0o600 });
+    await link(unrelatedVictim, hardLinkOutput);
+    const unrelatedHardLink = spawnSync(
+      process.execPath,
+      [
+        "Scripts/review-local-interruptibility-benchmark.mjs",
+        "report",
+        "--run-directory",
+        directory,
+        "--review",
+        reviewPath,
+        "--output",
+        hardLinkOutput,
+      ],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    assert.notEqual(unrelatedHardLink.status, 0);
+    assert.match(unrelatedHardLink.stderr, /output file must not have additional hard links/);
+    assert.equal(await readFile(unrelatedVictim, "utf8"), "必须保留的无关内容");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
