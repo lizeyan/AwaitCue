@@ -1411,7 +1411,10 @@ test("命令行从真实采样目录生成私有复核清单并在填写后输�
         },
       );
       assert.equal(replayResult.status, 0, replayResult.stderr);
-      assert.doesNotMatch(replayResult.stdout, /contextText|imageFile|imageSHA256|ChatGPT/);
+      assert.doesNotMatch(
+        replayResult.stdout,
+        /contextText|imageFile|imageSHA256|ChatGPT|正在编辑技术内容|"cases"|"description"/,
+      );
       const replayReport = JSON.parse(await readFile(replayReportPath, "utf8"));
       assert.equal(replayReport.summary.accuracy, 1);
       assert.equal(replayReport.summary.tokens.input, 123);
@@ -1517,6 +1520,10 @@ test("命令行从真实采样目录生成私有复核清单并在填写后输�
       { cwd: repositoryRoot, encoding: "utf8" },
     );
     assert.equal(reportResult.status, 0, reportResult.stderr);
+    assert.doesNotMatch(
+      reportResult.stdout,
+      /正在编辑技术内容|"cases"|"description"/,
+    );
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     assert.equal(report.summary.accuracy, 1);
     assert.equal((await stat(reportPath)).mode & 0o777, 0o600);

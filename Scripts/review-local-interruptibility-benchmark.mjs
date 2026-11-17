@@ -166,7 +166,7 @@ async function main() {
       exclusive: false,
       protectedInputPaths: [...inputPaths, reviewPath, promptPath],
     });
-    process.stdout.write(`${JSON.stringify(report.summary, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(summaryForConsole(report.summary), null, 2)}\n`);
     return;
   }
   const report = compareHumanReview(run, samples, review);
@@ -175,7 +175,13 @@ async function main() {
     exclusive: false,
     protectedInputPaths: [...inputPaths, reviewPath],
   });
-  process.stdout.write(`${JSON.stringify(report.summary, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(summaryForConsole(report.summary), null, 2)}\n`);
+}
+
+/** 终端只显示聚合指标；逐样本人工理由只留在 0600 私有报告中。 */
+function summaryForConsole(summary) {
+  const { cases: _cases, ...aggregate } = summary;
+  return aggregate;
 }
 
 /** 相对图片路径以 run 目录为根；复核清单必须同目录保存，避免 next 展示错误文件。 */

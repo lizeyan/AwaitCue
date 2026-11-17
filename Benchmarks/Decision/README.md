@@ -211,6 +211,8 @@ permissions were widened, and output paths are opened without following symbolic
 command permits its output path to replace any `run.json`, sample JSON, JPEG, or human-review input
 that it read for the operation. Non-exclusive report output is opened without truncation first; its
 device and inode are checked against every input before the file is truncated and rewritten.
+Successful report and replay commands print aggregate metrics without `cases`; per-sample human
+rationales and model results remain only in the private `0600` JSON reports instead of terminal logs.
 The report is rejected if a sample is missing, duplicated,
 not numbered continuously from `0001`, has a JSON filename / sample ID / image filename mismatch,
 is rebound to another image, changes bytes after review preparation, disagrees with a digest recorded at
