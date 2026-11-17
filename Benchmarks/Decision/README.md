@@ -194,6 +194,9 @@ letting opposite changes cancel inside one accuracy number. `promptVerifiedPaire
 repeats that comparison only from the baseline prompt's recorded validity boundary, so legacy
 samples are not misattributed to the current production prompt. Run and sample record digests stay
 inside the review plan for integrity checks and are not copied into the replay report.
+`promptVerifiedSummary` likewise reports the candidate's own accuracy, latency, usage, and confusion
+only inside that baseline-valid range, making it directly comparable with the production report's
+field of the same name.
 
 The run and samples directories must keep their private `0700` boundary. Original `run.json`,
 sample JSON, and JPEG inputs must also remain regular files with no group or other permissions;

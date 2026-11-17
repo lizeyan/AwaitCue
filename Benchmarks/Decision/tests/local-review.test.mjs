@@ -120,6 +120,44 @@ test("候选 prompt 回放只接受冻结标签且报告不复制原始证据", 
   assert.doesNotMatch(JSON.stringify(report), /contextText|imageFile|imageSHA256|ChatGPT/);
 });
 
+test("候选回放单独汇总生产 prompt 有效边界内的准确率", () => {
+  const plan = {
+    version: 1,
+    kind: "interruptibility-reviewed-replay-plan",
+    sourceRun: {
+      runRecordSHA256: "c".repeat(64),
+      sampleCount: 2,
+      baselinePromptSHA256: "a".repeat(64),
+      baselinePromptValidFromSampleID: "0002",
+    },
+    samples: [
+      { id: "0001", expected: "interruptible", description: "被动阅读。" },
+      { id: "0002", expected: "notInterruptible", description: "正在写作。" },
+    ],
+  };
+  const report = createReviewedReplayReport(
+    plan,
+    [
+      { id: "0001", outcome: "notInterruptible", confidence: 0.8, durationMs: 100 },
+      { id: "0002", outcome: "notInterruptible", confidence: 0.9, durationMs: 120 },
+    ],
+    {
+      model: "decision-model",
+      endpointHost: "model.example",
+      promptSHA256: "d".repeat(64),
+    },
+    [
+      { id: "0001", outcome: "interruptible" },
+      { id: "0002", outcome: "notInterruptible" },
+    ],
+  );
+
+  assert.equal(report.summary.accuracy, 0.5);
+  assert.equal(report.promptVerifiedSummary.caseCount, 1);
+  assert.equal(report.promptVerifiedSummary.accuracy, 1);
+  assert.equal(report.promptVerifiedSummary.cases[0].id, "0002");
+});
+
 test("提前标记完成的 run 不能冒充完整 24 小时采样", () => {
   const premature = benchmarkRun("completed", 1);
   premature.completedAt = "2026-11-18T05:40:00Z";

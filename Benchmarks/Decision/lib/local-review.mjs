@@ -293,6 +293,14 @@ export function createReviewedReplayReport(plan, results, configuration, baselin
     fullyStableCaseRate: null,
     cases: summary.cases.map((entry) => ({ ...entry, stability: null })),
   };
+  const promptVerifiedCases = plan.sourceRun.baselinePromptValidFromSampleID == null
+    ? null
+    : benchmarkCases.filter(
+      (entry) => entry.id >= plan.sourceRun.baselinePromptValidFromSampleID,
+    );
+  const promptVerifiedSummary = promptVerifiedCases == null
+    ? null
+    : aggregateBenchmark(promptVerifiedCases);
   return {
     version: 1,
     kind: "interruptibility-reviewed-replay-report",
@@ -309,6 +317,16 @@ export function createReviewedReplayReport(plan, results, configuration, baselin
       promptSHA256: configuration.promptSHA256,
     },
     summary: replaySummary,
+    promptVerifiedSummary: promptVerifiedSummary == null
+      ? null
+      : {
+        ...promptVerifiedSummary,
+        meanCaseStability: null,
+        fullyStableCaseRate: null,
+        cases: promptVerifiedSummary.cases.map(
+          (entry) => ({ ...entry, stability: null }),
+        ),
+      },
     pairedComparison: summarizePairedReplay(plan.samples, baselineByID, resultsByID),
     promptVerifiedPairedComparison:
       plan.sourceRun.baselinePromptValidFromSampleID == null
