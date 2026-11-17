@@ -7,6 +7,7 @@ import {
   link,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   stat,
   symlink,
@@ -24,9 +25,25 @@ import {
   createHumanReviewManifest,
   createReviewedReplayPlan,
   createReviewedReplayReport,
+  validatePublicBenchmarkReport,
 } from "../lib/local-review.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+
+test("仓库中的公开 benchmark 报告全部符合脱敏结构", async () => {
+  const reportsDirectory = path.join(repositoryRoot, "Benchmarks/Decision/reports");
+  const reportFiles = (await readdir(reportsDirectory))
+    .filter((name) => name.endsWith(".json"))
+    .sort();
+
+  for (const name of reportFiles) {
+    const report = JSON.parse(await readFile(path.join(reportsDirectory, name), "utf8"));
+    assert.doesNotThrow(
+      () => validatePublicBenchmarkReport(report),
+      `${name} 必须只包含公开聚合字段`,
+    );
+  }
+});
 
 test("人工复核清单只在采样完成后生成且不泄露模型结论", () => {
   const running = benchmarkRun("running", 1);
@@ -133,6 +150,12 @@ test("候选 prompt 回放只接受冻结标签且报告不复制原始证据", 
   report.pairedComparison.transitions.privateFutureField = {
     privateFutureOutcome: 1,
   };
+  const invalidProduction = structuredClone(production);
+  invalidProduction.run.lockedPollCount = -1;
+  assert.throws(
+    () => createPublicBenchmarkReport(invalidProduction, report),
+    /lockedPollCount is invalid/,
+  );
   const publicReport = createPublicBenchmarkReport(production, report);
   const publicJSON = JSON.stringify(publicReport);
   assert.equal(publicReport.dataset.sampleCount, 1);
@@ -142,6 +165,22 @@ test("候选 prompt 回放只接受冻结标签且报告不复制原始证据", 
   assert.doesNotMatch(
     publicJSON,
     /samples|cases|humanRationale|description|contextText|imageFile|endpointHost|modelName|privateFuture|sensitive-|ChatGPT|正在编辑/,
+  );
+  assert.doesNotThrow(() => validatePublicBenchmarkReport(publicReport));
+  assert.throws(
+    () => validatePublicBenchmarkReport({
+      ...publicReport,
+      privateFutureField: "must-not-be-public",
+    }),
+    /unexpected field/,
+  );
+  const nestedPrivateField = structuredClone(publicReport);
+  nestedPrivateField.baseline.overall.confusion.privateFutureField = {
+    evidence: "must-not-be-public",
+  };
+  assert.throws(
+    () => validatePublicBenchmarkReport(nestedPrivateField),
+    /unexpected field/,
   );
 });
 

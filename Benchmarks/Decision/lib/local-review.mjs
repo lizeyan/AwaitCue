@@ -397,7 +397,7 @@ export function createPublicBenchmarkReport(comparison, replay) {
     throw new Error("public report inputs must use the same baseline prompt");
   }
 
-  return {
+  const report = {
     version: 1,
     kind: "interruptibility-public-benchmark-report",
     generatedAt: new Date().toISOString(),
@@ -434,6 +434,251 @@ export function createPublicBenchmarkReport(comparison, replay) {
     promptVerifiedPaired:
       publicPairedComparison(replay.promptVerifiedPairedComparison),
   };
+  validatePublicBenchmarkReport(report);
+  return report;
+}
+
+/**
+ * 校验准备提交的公开报告只含既定聚合字段。
+ * CI 对仓库内报告调用此函数，手工增加字段不能绕过生成器的隐私白名单。
+ */
+export function validatePublicBenchmarkReport(report) {
+  assertExactObject(report, [
+    "version",
+    "kind",
+    "generatedAt",
+    "dataset",
+    "baseline",
+    "candidate",
+    "paired",
+    "promptVerifiedPaired",
+  ], "public report");
+  if (report.version !== 1
+      || report.kind !== "interruptibility-public-benchmark-report"
+      || !Number.isFinite(Date.parse(report.generatedAt))) {
+    throw new Error("public report identity is invalid");
+  }
+  validatePublicDataset(report.dataset);
+  validatePublicModelSummary(report.baseline, "baseline");
+  validatePublicModelSummary(report.candidate, "candidate");
+  validatePublicPaired(report.paired, "paired");
+  validatePublicPaired(report.promptVerifiedPaired, "promptVerifiedPaired", true);
+  return report;
+}
+
+/** 校验公开数据集元信息；这里不允许出现样本路径、时间线或逐样本证据。 */
+function validatePublicDataset(dataset) {
+  assertExactObject(dataset, [
+    "sampleCount",
+    "promptVerifiedSampleCount",
+    "sampling",
+    "reliability",
+  ], "public dataset");
+  assertNonnegativeInteger(dataset.sampleCount, "public dataset sampleCount");
+  if (dataset.promptVerifiedSampleCount !== null) {
+    assertNonnegativeInteger(
+      dataset.promptVerifiedSampleCount,
+      "public dataset promptVerifiedSampleCount",
+    );
+    if (dataset.promptVerifiedSampleCount > dataset.sampleCount) {
+      throw new Error("public dataset promptVerifiedSampleCount exceeds sampleCount");
+    }
+  }
+  assertExactObject(dataset.sampling, [
+    "timeWeighted",
+    "consecutiveIdenticalImagesIncluded",
+  ], "public sampling");
+  if (dataset.sampling.timeWeighted !== false
+      || dataset.sampling.consecutiveIdenticalImagesIncluded !== false) {
+    throw new Error("public sampling semantics are invalid");
+  }
+  assertExactObject(dataset.reliability, [
+    "lockedPollCount",
+    "excludedPollCount",
+    "unavailablePollCount",
+    "captureFailureCount",
+    "modelFailureCount",
+  ], "public reliability");
+  for (const [name, value] of Object.entries(dataset.reliability)) {
+    assertNonnegativeInteger(value, `public reliability ${name}`);
+  }
+}
+
+/** 校验一个模型版本的公开摘要，并保持基线与候选使用同一结构。 */
+function validatePublicModelSummary(summary, label) {
+  assertExactObject(summary, [
+    "promptSHA256",
+    "overall",
+    "promptVerified",
+    "confidence",
+    "promptVerifiedConfidence",
+  ], `public ${label}`);
+  if (!/^[0-9a-f]{64}$/.test(summary.promptSHA256 ?? "")) {
+    throw new Error(`public ${label} prompt SHA-256 is invalid`);
+  }
+  validatePublicAggregate(summary.overall, `${label} overall`);
+  validatePublicAggregate(summary.promptVerified, `${label} promptVerified`, true);
+  validatePublicConfidence(summary.confidence, `${label} confidence`);
+  validatePublicConfidence(
+    summary.promptVerifiedConfidence,
+    `${label} promptVerifiedConfidence`,
+    true,
+  );
+}
+
+/** 校验准确率、失败率、延迟与 token 等聚合指标，不接受逐样本明细。 */
+function validatePublicAggregate(summary, label, nullable = false) {
+  if (nullable && summary === null) return;
+  assertExactObject(summary, [
+    "caseCount",
+    "runCount",
+    "correctRunCount",
+    "validDecisionCount",
+    "accuracy",
+    "validDecisionAccuracy",
+    "incompleteRate",
+    "invalidRate",
+    "errorRate",
+    "meanCaseStability",
+    "fullyStableCaseRate",
+    "latencyMs",
+    "confusion",
+    "tokens",
+  ], `public ${label}`);
+  for (const field of ["caseCount", "runCount", "correctRunCount", "validDecisionCount"]) {
+    assertNonnegativeInteger(summary[field], `public ${label} ${field}`);
+  }
+  for (const field of [
+    "accuracy",
+    "validDecisionAccuracy",
+    "incompleteRate",
+    "invalidRate",
+    "errorRate",
+  ]) {
+    assertRate(summary[field], `public ${label} ${field}`);
+  }
+  if (summary.meanCaseStability !== null || summary.fullyStableCaseRate !== null) {
+    throw new Error(`public ${label} stability must be null for single-observation samples`);
+  }
+  assertExactObject(summary.latencyMs, ["p50", "p95", "max"], `public ${label} latency`);
+  for (const [name, value] of Object.entries(summary.latencyMs)) {
+    if (value !== null && (!Number.isFinite(value) || value < 0)) {
+      throw new Error(`public ${label} latency ${name} is invalid`);
+    }
+  }
+  assertExactObject(summary.confusion, ["interruptibility"], `public ${label} confusion`);
+  validatePublicOutcomeMatrix(summary.confusion.interruptibility, `${label} confusion`);
+  if (summary.tokens !== null) validatePublicTokens(summary.tokens, `${label} tokens`);
+}
+
+/** 校验置信度聚合；无可用样本时平均值可以为 null。 */
+function validatePublicConfidence(confidence, label, nullable = false) {
+  if (nullable && confidence === null) return;
+  assertExactObject(confidence, [
+    "validDecisionCount",
+    "correctDecisionCount",
+    "incorrectDecisionCount",
+    "mean",
+    "meanCorrect",
+    "meanIncorrect",
+  ], `public ${label}`);
+  for (const field of [
+    "validDecisionCount",
+    "correctDecisionCount",
+    "incorrectDecisionCount",
+  ]) {
+    assertNonnegativeInteger(confidence[field], `public ${label} ${field}`);
+  }
+  for (const field of ["mean", "meanCorrect", "meanIncorrect"]) {
+    if (confidence[field] !== null) assertRate(confidence[field], `public ${label} ${field}`);
+  }
+}
+
+/** 校验 token 与缓存命中率聚合，禁止未知服务端字段进入公开报告。 */
+function validatePublicTokens(tokens, label) {
+  assertExactObject(tokens, [
+    "input",
+    "output",
+    "reasoning",
+    "cachedInput",
+    "cacheWrite",
+    "tokenCacheHitRate",
+    "requestCacheHitRate",
+  ], `public ${label}`);
+  for (const field of ["input", "output", "reasoning", "cachedInput", "cacheWrite"]) {
+    assertNonnegativeInteger(tokens[field], `public ${label} ${field}`);
+  }
+  assertRate(tokens.tokenCacheHitRate, `public ${label} tokenCacheHitRate`);
+  assertRate(tokens.requestCacheHitRate, `public ${label} requestCacheHitRate`);
+}
+
+/** 校验基线与候选的配对结果；回归样本 ID 只能留在私有报告。 */
+function validatePublicPaired(comparison, label, nullable = false) {
+  if (nullable && comparison === null) return;
+  assertExactObject(comparison, [
+    "sampleCount",
+    "bothCorrectCount",
+    "bothIncorrectCount",
+    "candidateFixedCount",
+    "candidateRegressedCount",
+    "transitions",
+  ], `public ${label}`);
+  for (const field of [
+    "sampleCount",
+    "bothCorrectCount",
+    "bothIncorrectCount",
+    "candidateFixedCount",
+    "candidateRegressedCount",
+  ]) {
+    assertNonnegativeInteger(comparison[field], `public ${label} ${field}`);
+  }
+  validatePublicOutcomeMatrix(comparison.transitions, `${label} transitions`, true);
+}
+
+/** 校验混淆矩阵或迁移矩阵，只允许产品已经定义的判断结果。 */
+function validatePublicOutcomeMatrix(matrix, label, allowFailureRows = false) {
+  assertPlainObject(matrix, `public ${label}`);
+  const allowedRows = allowFailureRows ? publicOutcomes() : [...validHumanDecisions];
+  for (const [row, counts] of Object.entries(matrix)) {
+    if (!allowedRows.includes(row)) throw new Error(`public ${label} has unexpected field ${row}`);
+    assertPlainObject(counts, `public ${label} ${row}`);
+    for (const [outcome, count] of Object.entries(counts)) {
+      if (!publicOutcomes().includes(outcome)) {
+        throw new Error(`public ${label} ${row} has unexpected field ${outcome}`);
+      }
+      assertNonnegativeInteger(count, `public ${label} ${row} ${outcome}`);
+    }
+  }
+}
+
+/** 要求对象字段与白名单完全一致，避免新增字段未经审查自动公开。 */
+function assertExactObject(value, expectedKeys, label) {
+  assertPlainObject(value, label);
+  const expected = [...expectedKeys].sort();
+  const actual = Object.keys(value).sort();
+  const unexpected = actual.find((key) => !expected.includes(key));
+  if (unexpected) throw new Error(`${label} has unexpected field ${unexpected}`);
+  const missing = expected.find((key) => !actual.includes(key));
+  if (missing) throw new Error(`${label} is missing field ${missing}`);
+}
+
+/** 排除 null、数组和标量，确保后续字段检查不会被类型强制转换绕过。 */
+function assertPlainObject(value, label) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+}
+
+/** 计数类公开指标必须是非负整数。 */
+function assertNonnegativeInteger(value, label) {
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${label} is invalid`);
+}
+
+/** 比率类公开指标必须位于闭区间 0 到 1。 */
+function assertRate(value, label) {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`${label} is invalid`);
+  }
 }
 
 /** 聚合摘要中的 cases 含人工理由，公开报告只能保留汇总数字。 */
