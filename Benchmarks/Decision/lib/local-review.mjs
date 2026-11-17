@@ -297,7 +297,12 @@ export function createReviewedReplayReport(plan, results, configuration, baselin
     version: 1,
     kind: "interruptibility-reviewed-replay-report",
     generatedAt: new Date().toISOString(),
-    sourceRun: plan.sourceRun,
+    sourceRun: {
+      sampleCount: plan.sourceRun.sampleCount,
+      baselinePromptSHA256: plan.sourceRun.baselinePromptSHA256,
+      baselinePromptValidFromSampleID:
+        plan.sourceRun.baselinePromptValidFromSampleID,
+    },
     configuration: {
       model: configuration.model,
       endpointHost: configuration.endpointHost,

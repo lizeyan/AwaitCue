@@ -114,6 +114,8 @@ test("候选 prompt 回放只接受冻结标签且报告不复制原始证据", 
   });
   assert.equal(report.sourceRun.baselinePromptSHA256, "a".repeat(64));
   assert.equal(report.sourceRun.baselinePromptValidFromSampleID, "0001");
+  assert.equal(report.sourceRun.sampleCount, 1);
+  assert.equal("runRecordSHA256" in report.sourceRun, false);
   assert.deepEqual(report.promptVerifiedPairedComparison, report.pairedComparison);
   assert.doesNotMatch(JSON.stringify(report), /contextText|imageFile|imageSHA256|ChatGPT/);
 });
