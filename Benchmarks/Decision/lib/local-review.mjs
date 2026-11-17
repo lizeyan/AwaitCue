@@ -197,6 +197,15 @@ export function compareHumanReview(run, samples, review) {
         (entry) => entry.id >= run.interruptibilityPromptValidFromSampleID,
       )),
     confidenceSummary: summarizeConfidence(reviewedSamples, samplesByID),
+    promptVerifiedConfidenceSummary:
+      run.interruptibilityPromptValidFromSampleID == null
+        ? null
+        : summarizeConfidence(
+          reviewedSamples.filter(
+            (sample) => sample.id >= run.interruptibilityPromptValidFromSampleID,
+          ),
+          samplesByID,
+        ),
     samples: reviewedSamples.map((reviewed) => {
       const sample = samplesByID.get(reviewed.id);
       return {

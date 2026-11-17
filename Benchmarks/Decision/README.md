@@ -248,9 +248,11 @@ those samples, while `summary` continues to describe the complete 24-hour corpus
 evidence.
 
 `confidenceSummary` reports the number and mean confidence of contract-valid decisions, then splits
-the mean between decisions that matched the blind human label and decisions that did not. It uses no
-arbitrary confidence threshold; model failures have no decision or confidence and stay visible in
-the ordinary accuracy/error metrics instead.
+the mean between decisions that matched the blind human label and decisions that did not.
+`promptVerifiedConfidenceSummary` repeats the same calculation only inside the recorded production
+prompt range, so its confidence is directly comparable with a candidate replay's field of the same
+name. Neither field uses an arbitrary confidence threshold; model failures have no decision or
+confidence and stay visible in the ordinary accuracy/error metrics instead.
 
 Each local screen context is evaluated only once, so the report cannot measure repeated-run
 stability for those samples. `meanCaseStability`, `fullyStableCaseRate`, and per-case `stability` are

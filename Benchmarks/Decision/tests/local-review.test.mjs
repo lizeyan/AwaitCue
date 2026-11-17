@@ -497,6 +497,14 @@ test("比较报告单独汇总已记录 prompt 范围内的准确率", () => {
   assert.equal(report.promptVerifiedSummary.errorRate, 0.5);
   assert.equal(report.promptVerifiedSummary.meanCaseStability, null);
   assert.equal(report.promptVerifiedSummary.tokens, null);
+  assert.deepEqual(report.promptVerifiedConfidenceSummary, {
+    validDecisionCount: 1,
+    correctDecisionCount: 1,
+    incorrectDecisionCount: 0,
+    mean: 0.98,
+    meanCorrect: 0.98,
+    meanIncorrect: null,
+  });
 });
 
 test("比较报告分别汇总正确与错误判断的平均置信度", () => {
