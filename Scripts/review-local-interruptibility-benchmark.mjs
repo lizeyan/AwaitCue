@@ -103,6 +103,7 @@ async function main() {
   assertReportOutputLocation(options.output, root);
   if (!options.review) throw new Error("report requires --review");
   const reviewPath = path.resolve(options.review);
+  assertReviewOutputLocation(reviewPath, root);
   await assertPrivateRegularFile(reviewPath, "human review");
   const review = JSON.parse(await readFile(reviewPath, "utf8"));
   if (command === "replay") {

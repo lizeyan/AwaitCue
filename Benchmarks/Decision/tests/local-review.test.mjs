@@ -761,7 +761,7 @@ test("人工复核清单必须与 run.json 保存在同一私有目录", async (
   }
 });
 
-test("比较与回放报告必须保存在私有 run 目录", async () => {
+test("比较与回放只接受私有 run 目录内的复核输入和报告输出", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "awaitcue-local-report-root-"));
   const outsideDirectory = await mkdtemp(path.join(tmpdir(), "awaitcue-local-report-outside-"));
   try {
@@ -801,6 +801,31 @@ test("比较与回放报告必须保存在私有 run 目录", async () => {
     review.samples[0].humanRationale = "正在编辑内容，需要持续专注。";
     await writeFile(reviewPath, JSON.stringify(review));
     await chmod(reviewPath, 0o600);
+
+    const outsideReviewPath = path.join(outsideDirectory, "human-review.json");
+    await writeFile(outsideReviewPath, JSON.stringify(review));
+    await chmod(outsideReviewPath, 0o600);
+    const externalReviewReportPath = path.join(directory, "external-review-report.json");
+    const externalReviewReport = spawnSync(
+      process.execPath,
+      [
+        "Scripts/review-local-interruptibility-benchmark.mjs",
+        "report",
+        "--run-directory",
+        directory,
+        "--review",
+        outsideReviewPath,
+        "--output",
+        externalReviewReportPath,
+      ],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    assert.notEqual(externalReviewReport.status, 0);
+    assert.match(externalReviewReport.stderr, /human review must be stored in the benchmark run directory/);
+    assert.equal(
+      await access(externalReviewReportPath).then(() => true, () => false),
+      false,
+    );
 
     const reportPath = path.join(outsideDirectory, "comparison-report.json");
     const report = spawnSync(
