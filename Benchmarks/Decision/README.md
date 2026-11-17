@@ -200,6 +200,23 @@ field of the same name. `confidenceSummary` and `promptVerifiedConfidenceSummary
 report's same all/correct/incorrect means, so an equally accurate but more overconfident candidate
 is still visible instead of being treated as a neutral change.
 
+The wrapper performs a local replay preflight before reading Defaults or Keychain. After both
+private reports are complete, generate the public, aggregate-only artifact separately:
+
+```bash
+Scripts/review-local-interruptibility-benchmark.mjs public-report \
+  --comparison-report .local/benchmarks/<run>/comparison-report.json \
+  --candidate-report .local/benchmarks/<run>/candidate-replay.json \
+  --output Benchmarks/Decision/reports/macos-24h-<date>.json
+```
+
+This command requires both private inputs to belong to the same reviewed run and baseline prompt.
+Its output uses a strict field allowlist: sample counts, reliability counters, accuracy and failure
+rates, confusion, confidence, latency, token aggregates, and paired fix/regression counts. It does
+not copy per-sample cases, activity text, human rationales, model answers, paths, endpoint/model
+configuration, exact sampling timeline, or regression sample IDs. Inspect this aggregate file
+before committing it; the two source reports must remain in `.local/`.
+
 The run and samples directories must keep their private `0700` boundary. Original `run.json`,
 sample JSON, and JPEG inputs must also remain regular files with no group or other permissions;
 review preparation refuses evidence whose directory or file permissions were widened or whose
@@ -214,6 +231,9 @@ that it read for the operation. Non-exclusive report output is opened without tr
 device and inode are checked against every input before the file is truncated and rewritten.
 Successful report and replay commands print aggregate metrics without `cases`; per-sample human
 rationales and model results remain only in the private `0600` JSON reports instead of terminal logs.
+Both private reports and the public aggregate explicitly state that the corpus is not time weighted
+and that consecutive identical screenshots are omitted; sample prevalence must not be interpreted
+as the proportion of the user's day spent in an activity.
 The report is rejected if a sample is missing, duplicated,
 not numbered continuously from `0001`, has a JSON filename / sample ID / image filename mismatch,
 is rebound to another image, changes bytes after review preparation, disagrees with a digest recorded at

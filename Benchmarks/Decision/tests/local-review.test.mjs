@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   compareHumanReview,
+  createPublicBenchmarkReport,
   createHumanReviewManifest,
   createReviewedReplayPlan,
   createReviewedReplayReport,
@@ -122,6 +123,63 @@ test("候选 prompt 回放只接受冻结标签且报告不复制原始证据", 
   assert.equal("runRecordSHA256" in report.sourceRun, false);
   assert.deepEqual(report.promptVerifiedPairedComparison, report.pairedComparison);
   assert.doesNotMatch(JSON.stringify(report), /contextText|imageFile|imageSHA256|ChatGPT/);
+
+  const production = compareHumanReview(run, samples, review);
+  production.summary.privateFutureField = "sensitive-production-value";
+  production.confidenceSummary.privateFutureField = "sensitive-confidence-value";
+  production.sampling.privateFutureField = "sensitive-sampling-value";
+  report.summary.tokens.privateFutureField = "sensitive-token-value";
+  report.pairedComparison.privateFutureField = "sensitive-paired-value";
+  report.pairedComparison.transitions.privateFutureField = {
+    privateFutureOutcome: 1,
+  };
+  const publicReport = createPublicBenchmarkReport(production, report);
+  const publicJSON = JSON.stringify(publicReport);
+  assert.equal(publicReport.dataset.sampleCount, 1);
+  assert.equal(publicReport.baseline.overall.accuracy, 1);
+  assert.equal(publicReport.candidate.overall.accuracy, 1);
+  assert.equal(publicReport.paired.candidateFixedCount, 1);
+  assert.doesNotMatch(
+    publicJSON,
+    /samples|cases|humanRationale|description|contextText|imageFile|endpointHost|modelName|privateFuture|sensitive-|ChatGPT|正在编辑/,
+  );
+});
+
+test("公开脱敏报告拒绝比较不同 run 或不同基线 prompt", () => {
+  const comparison = {
+    version: 1,
+    run: {
+      sampleCount: 2,
+      interruptibilityPromptSHA256: "a".repeat(64),
+      interruptibilityPromptValidFromSampleID: "0002",
+    },
+    evidenceIntegrity: { promptVerifiedSampleCount: 1 },
+    sampling: { timeWeighted: false, consecutiveIdenticalImagesIncluded: false },
+    summary: { cases: [] },
+    promptVerifiedSummary: { cases: [] },
+    confidenceSummary: {},
+    promptVerifiedConfidenceSummary: {},
+  };
+  const replay = {
+    version: 1,
+    kind: "interruptibility-reviewed-replay-report",
+    sourceRun: {
+      sampleCount: 3,
+      baselinePromptSHA256: "a".repeat(64),
+      baselinePromptValidFromSampleID: "0002",
+    },
+  };
+
+  assert.throws(
+    () => createPublicBenchmarkReport(comparison, replay),
+    /same reviewed run/,
+  );
+  replay.sourceRun.sampleCount = 2;
+  replay.sourceRun.baselinePromptSHA256 = "b".repeat(64);
+  assert.throws(
+    () => createPublicBenchmarkReport(comparison, replay),
+    /same baseline prompt/,
+  );
 });
 
 test("候选回放单独汇总生产 prompt 有效边界内的准确率", () => {
@@ -1229,6 +1287,7 @@ test("比较报告拒绝 prepare 后变化的 run 元数据", async () => {
 
 test("命令行从真实采样目录生成私有复核清单并在填写后输出报告", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "awaitcue-local-review-"));
+  const publicDirectory = await mkdtemp(path.join(tmpdir(), "awaitcue-public-report-"));
   try {
     const samplesDirectory = path.join(directory, "samples");
     await import("node:fs/promises").then(({ mkdir }) => mkdir(samplesDirectory));
@@ -1645,8 +1704,38 @@ test("命令行从真实采样目录生成私有复核清单并在填写后输�
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     assert.equal(report.summary.accuracy, 1);
     assert.equal((await stat(reportPath)).mode & 0o777, 0o600);
+
+    const publicReportPath = path.join(publicDirectory, "interruptibility-summary.json");
+    const publicReportResult = spawnSync(
+      process.execPath,
+      [
+        "Scripts/review-local-interruptibility-benchmark.mjs",
+        "public-report",
+        "--comparison-report",
+        reportPath,
+        "--candidate-report",
+        replayReportPath,
+        "--output",
+        publicReportPath,
+      ],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    assert.equal(publicReportResult.status, 0, publicReportResult.stderr);
+    assert.equal(
+      publicReportResult.stdout,
+      "Prepared sanitized public benchmark report.\n",
+    );
+    const publicReport = JSON.parse(await readFile(publicReportPath, "utf8"));
+    assert.equal(publicReport.kind, "interruptibility-public-benchmark-report");
+    assert.equal(publicReport.dataset.sampleCount, 1);
+    assert.doesNotMatch(
+      JSON.stringify(publicReport),
+      /samples|cases|humanRationale|description|contextText|imageFile|endpointHost|modelName|ChatGPT|正在编辑/,
+    );
+    assert.equal((await stat(publicReportPath)).mode & 0o777, 0o600);
   } finally {
     await rm(directory, { recursive: true, force: true });
+    await rm(publicDirectory, { recursive: true, force: true });
   }
 });
 

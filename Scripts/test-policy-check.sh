@@ -42,6 +42,19 @@ git -C "${fixture_root}" add Benchmarks/Decision/fixtures/images/synthetic.png
 git -C "${fixture_root}" reset -q -- Benchmarks/Decision/fixtures/images/synthetic.png
 rm -f "${fixture_root}/Benchmarks/Decision/fixtures/images/synthetic.png"
 
+# 仅含白名单聚合指标的公开报告是目标产物，不能被私有内容规则误伤。
+mkdir -p "${fixture_root}/Benchmarks/Decision/reports"
+printf '%s\n' \
+    '{"kind":"interruptibility-public-benchmark-report","dataset":{"sampleCount":10},"baseline":{"overall":{"accuracy":0.9}},"candidate":{"overall":{"accuracy":1}}}' \
+    > "${fixture_root}/Benchmarks/Decision/reports/public-summary.json"
+git -C "${fixture_root}" add Benchmarks/Decision/reports/public-summary.json
+(
+    cd "${fixture_root}"
+    ./Scripts/policy-check.sh >/dev/null
+)
+git -C "${fixture_root}" reset -q -- Benchmarks/Decision/reports/public-summary.json
+rm -f "${fixture_root}/Benchmarks/Decision/reports/public-summary.json"
+
 assert_private_artifact_rejected() {
     local relative_path="$1"
     mkdir -p "$(dirname "${fixture_root}/${relative_path}")"

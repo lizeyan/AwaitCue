@@ -375,6 +375,171 @@ export function createReviewedReplayReport(plan, results, configuration, baselin
   };
 }
 
+/**
+ * 从同一批盲审证据的生产与候选报告生成可提交的脱敏汇总。
+ * 只复制聚合指标；逐样本理由、模型答案、路径、时间线和服务地址都不能进入公开产物。
+ */
+export function createPublicBenchmarkReport(comparison, replay) {
+  if (comparison?.version !== 1 || typeof comparison.run !== "object") {
+    throw new Error("invalid local comparison report");
+  }
+  if (replay?.version !== 1
+      || replay.kind !== "interruptibility-reviewed-replay-report") {
+    throw new Error("invalid reviewed replay report");
+  }
+  if (comparison.run.sampleCount !== replay.sourceRun?.sampleCount) {
+    throw new Error("public report inputs must describe the same reviewed run");
+  }
+  if (comparison.run.interruptibilityPromptSHA256
+        !== replay.sourceRun.baselinePromptSHA256
+      || comparison.run.interruptibilityPromptValidFromSampleID
+        !== replay.sourceRun.baselinePromptValidFromSampleID) {
+    throw new Error("public report inputs must use the same baseline prompt");
+  }
+
+  return {
+    version: 1,
+    kind: "interruptibility-public-benchmark-report",
+    generatedAt: new Date().toISOString(),
+    dataset: {
+      sampleCount: comparison.run.sampleCount,
+      promptVerifiedSampleCount:
+        comparison.evidenceIntegrity?.promptVerifiedSampleCount ?? null,
+      sampling: publicSampling(comparison.sampling),
+      reliability: {
+        lockedPollCount: comparison.run.lockedPollCount,
+        excludedPollCount: comparison.run.excludedPollCount,
+        unavailablePollCount: comparison.run.unavailablePollCount,
+        captureFailureCount: comparison.run.captureFailureCount,
+        modelFailureCount: comparison.run.modelFailureCount,
+      },
+    },
+    baseline: {
+      promptSHA256: comparison.run.interruptibilityPromptSHA256,
+      overall: publicAggregate(comparison.summary),
+      promptVerified: publicAggregate(comparison.promptVerifiedSummary),
+      confidence: publicConfidence(comparison.confidenceSummary),
+      promptVerifiedConfidence:
+        publicConfidence(comparison.promptVerifiedConfidenceSummary),
+    },
+    candidate: {
+      promptSHA256: replay.configuration?.promptSHA256 ?? null,
+      overall: publicAggregate(replay.summary),
+      promptVerified: publicAggregate(replay.promptVerifiedSummary),
+      confidence: publicConfidence(replay.confidenceSummary),
+      promptVerifiedConfidence:
+        publicConfidence(replay.promptVerifiedConfidenceSummary),
+    },
+    paired: publicPairedComparison(replay.pairedComparison),
+    promptVerifiedPaired:
+      publicPairedComparison(replay.promptVerifiedPairedComparison),
+  };
+}
+
+/** 聚合摘要中的 cases 含人工理由，公开报告只能保留汇总数字。 */
+function publicAggregate(summary) {
+  if (summary == null) return null;
+  return {
+    caseCount: summary.caseCount,
+    runCount: summary.runCount,
+    correctRunCount: summary.correctRunCount,
+    validDecisionCount: summary.validDecisionCount,
+    accuracy: summary.accuracy,
+    validDecisionAccuracy: summary.validDecisionAccuracy,
+    incompleteRate: summary.incompleteRate,
+    invalidRate: summary.invalidRate,
+    errorRate: summary.errorRate,
+    meanCaseStability: summary.meanCaseStability,
+    fullyStableCaseRate: summary.fullyStableCaseRate,
+    latencyMs: publicLatency(summary.latencyMs),
+    confusion: publicConfusion(summary.confusion),
+    tokens: publicTokens(summary.tokens),
+  };
+}
+
+/** 回归样本 ID 留在私有报告；公开版本只保留数量和三态迁移。 */
+function publicPairedComparison(comparison) {
+  if (comparison == null) return null;
+  return {
+    sampleCount: comparison.sampleCount,
+    bothCorrectCount: comparison.bothCorrectCount,
+    bothIncorrectCount: comparison.bothIncorrectCount,
+    candidateFixedCount: comparison.candidateFixedCount,
+    candidateRegressedCount: comparison.candidateRegressedCount,
+    transitions: publicTransitions(comparison.transitions),
+  };
+}
+
+function publicSampling(sampling) {
+  if (sampling == null) return null;
+  return {
+    timeWeighted: sampling.timeWeighted,
+    consecutiveIdenticalImagesIncluded: sampling.consecutiveIdenticalImagesIncluded,
+  };
+}
+
+function publicConfidence(confidence) {
+  if (confidence == null) return null;
+  return {
+    validDecisionCount: confidence.validDecisionCount,
+    correctDecisionCount: confidence.correctDecisionCount,
+    incorrectDecisionCount: confidence.incorrectDecisionCount,
+    mean: confidence.mean,
+    meanCorrect: confidence.meanCorrect,
+    meanIncorrect: confidence.meanIncorrect,
+  };
+}
+
+function publicLatency(latency) {
+  if (latency == null) return null;
+  return { p50: latency.p50, p95: latency.p95, max: latency.max };
+}
+
+function publicTokens(tokens) {
+  if (tokens == null) return null;
+  return {
+    input: tokens.input,
+    output: tokens.output,
+    reasoning: tokens.reasoning,
+    cachedInput: tokens.cachedInput,
+    cacheWrite: tokens.cacheWrite,
+    tokenCacheHitRate: tokens.tokenCacheHitRate,
+    requestCacheHitRate: tokens.requestCacheHitRate,
+  };
+}
+
+function publicConfusion(confusion) {
+  if (confusion == null) return null;
+  const source = confusion.interruptibility ?? {};
+  return {
+    interruptibility: Object.fromEntries([...validHumanDecisions].flatMap((expected) => {
+      const outcomes = publicOutcomeCounts(source[expected]);
+      return Object.keys(outcomes).length === 0 ? [] : [[expected, outcomes]];
+    })),
+  };
+}
+
+function publicTransitions(transitions) {
+  if (transitions == null) return null;
+  return Object.fromEntries(publicOutcomes().flatMap((baseline) => {
+    const outcomes = publicOutcomeCounts(transitions[baseline]);
+    return Object.keys(outcomes).length === 0 ? [] : [[baseline, outcomes]];
+  }));
+}
+
+function publicOutcomeCounts(counts) {
+  if (counts == null) return {};
+  return Object.fromEntries(publicOutcomes().flatMap((outcome) =>
+    Number.isInteger(counts[outcome]) && counts[outcome] >= 0
+      ? [[outcome, counts[outcome]]]
+      : [],
+  ));
+}
+
+function publicOutcomes() {
+  return [...validHumanDecisions, "incomplete", "invalid", "error"];
+}
+
 /** 真实采样只保留连续变化后的画面，因此准确率不能解释成用户时间占比分布。 */
 function localSamplingDescription() {
   return {

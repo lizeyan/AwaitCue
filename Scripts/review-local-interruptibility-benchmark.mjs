@@ -17,6 +17,7 @@ import {
   benchmarkOutcomeForLocalSample,
   compareHumanReview,
   createHumanReviewManifest,
+  createPublicBenchmarkReport,
   createReviewedReplayPlan,
   createReviewedReplayReport,
   nextIncompleteHumanReviewSample,
@@ -27,13 +28,18 @@ import { createHash, randomUUID } from "node:crypto";
 
 async function main() {
   const [command, ...argumentsList] = process.argv.slice(2);
-  if (!["prepare", "status", "next", "label", "report", "replay", "replay-preflight"]
+  if (!["prepare", "status", "next", "label", "report", "replay", "replay-preflight",
+    "public-report"]
     .includes(command)) {
     throw new Error(
-      "first argument must be prepare, status, next, label, report, replay, or replay-preflight",
+      "first argument must be prepare, status, next, label, report, replay, replay-preflight, or public-report",
     );
   }
   const options = parseArguments(argumentsList);
+  if (command === "public-report") {
+    await createPublicReportFile(options);
+    return;
+  }
   if (command === "status") {
     if (!options.review) throw new Error("status requires --review");
     const reviewPath = path.resolve(options.review);
@@ -193,6 +199,38 @@ async function main() {
     protectedInputPaths: [...inputPaths, reviewPath],
   });
   process.stdout.write(`${JSON.stringify(summaryForConsole(report.summary), null, 2)}\n`);
+}
+
+/** 读取同一私有 run 内的两份完整报告，并只把聚合字段写入可提交产物。 */
+async function createPublicReportFile(options) {
+  if (!options.comparisonReport || !options.candidateReport || !options.output) {
+    throw new Error(
+      "public-report requires --comparison-report, --candidate-report, and --output",
+    );
+  }
+  const comparisonPath = path.resolve(options.comparisonReport);
+  const candidatePath = path.resolve(options.candidateReport);
+  const privateDirectory = path.dirname(comparisonPath);
+  if (path.dirname(candidatePath) !== privateDirectory) {
+    throw new Error("private benchmark reports must share one run directory");
+  }
+  await assertPrivateDirectory(privateDirectory, "benchmark report directory");
+  await assertPrivateRegularFile(comparisonPath, "comparison report");
+  await assertPrivateRegularFile(candidatePath, "candidate replay report");
+  const comparison = JSON.parse(await readFile(comparisonPath, "utf8"));
+  const candidate = JSON.parse(await readFile(candidatePath, "utf8"));
+  const report = createPublicBenchmarkReport(comparison, candidate);
+  const outputPath = path.resolve(options.output);
+  if (path.dirname(outputPath) === privateDirectory) {
+    throw new Error("public benchmark report must be stored outside the private run directory");
+  }
+  assertDistinctOutputPath(outputPath, [comparisonPath, candidatePath]);
+  // 首次生成采用独占写入；人工确认后再将这份纯聚合 JSON 加入仓库。
+  await writePrivateJSON(outputPath, report, {
+    exclusive: true,
+    protectedInputPaths: [comparisonPath, candidatePath],
+  });
+  process.stdout.write("Prepared sanitized public benchmark report.\n");
 }
 
 /**
@@ -441,6 +479,10 @@ function parseArguments(argumentsList) {
       options.baseURL = nextValue(argumentsList, ++index, argument);
     } else if (argument === "--model") {
       options.model = nextValue(argumentsList, ++index, argument);
+    } else if (argument === "--comparison-report") {
+      options.comparisonReport = nextValue(argumentsList, ++index, argument);
+    } else if (argument === "--candidate-report") {
+      options.candidateReport = nextValue(argumentsList, ++index, argument);
     } else {
       throw new Error(`unknown argument: ${argument}`);
     }
