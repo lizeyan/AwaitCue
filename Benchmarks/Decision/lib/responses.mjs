@@ -104,15 +104,21 @@ export function classifyResponse(response, kind) {
   return { outcome: parsed.decision, confidence: parsed.confidence, usage };
 }
 
-/** 创建真正调用外部 Responses endpoint 的 adapter；测试可以注入 fetch。 */
-export function createDecisionClient({ endpoint, apiKey, model, fetchImpl = fetch }) {
+/** 创建真正调用外部 Responses endpoint 的 adapter；测试可以注入 fetch 和单调时钟。 */
+export function createDecisionClient({
+  endpoint,
+  apiKey,
+  model,
+  fetchImpl = fetch,
+  now = () => performance.now(),
+}) {
   const responsesURL = endpoint.endsWith("/responses")
     ? endpoint
     : `${endpoint.replace(/\/$/, "")}/responses`;
   return {
     async evaluate(entry, evidence, instructions) {
       const body = buildDecisionRequest(entry, evidence, { model, ...instructions });
-      const startedAt = performance.now();
+      const startedAt = now();
       try {
         const response = await fetchImpl(responsesURL, {
           method: "POST",
@@ -122,27 +128,32 @@ export function createDecisionClient({ endpoint, apiKey, model, fetchImpl = fetc
           },
           body: JSON.stringify(body),
         });
-        const durationMs = performance.now() - startedAt;
         let envelope;
         try {
           envelope = await response.json();
         } catch {
-          return { outcome: "invalid", reason: "response body is not JSON", durationMs };
+          return {
+            outcome: "invalid",
+            reason: "response body is not JSON",
+            durationMs: now() - startedAt,
+          };
         }
         if (!response.ok) {
           return {
             outcome: "error",
             reason: `HTTP ${response.status}`,
-            durationMs,
+            durationMs: now() - startedAt,
             usage: normalizeUsage(envelope?.usage),
           };
         }
-        return { ...classifyResponse(envelope, entry.kind), durationMs };
+        const result = classifyResponse(envelope, entry.kind);
+        // benchmark 的端到端耗时以调用方拿到可用判断为终点，而不是响应头到达。
+        return { ...result, durationMs: now() - startedAt };
       } catch (error) {
         return {
           outcome: "error",
           reason: error instanceof Error ? error.message : String(error),
-          durationMs: performance.now() - startedAt,
+          durationMs: now() - startedAt,
         };
       }
     },

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildDecisionRequest, classifyResponse } from "../lib/responses.mjs";
+import {
+  buildDecisionRequest,
+  classifyResponse,
+  createDecisionClient,
+} from "../lib/responses.mjs";
 
 test("builds bounded structured requests for both decision contracts", () => {
   const condition = buildDecisionRequest(
@@ -86,6 +90,43 @@ test("classifies completed, incomplete, malformed, and transport outcomes", () =
     classifyResponse({ status: "completed", output: [{ content: [{ type: "output_text", text: '{"decision":"interruptible","confidence":2}' }] }] }, "interruptibility").outcome,
     "invalid",
   );
+});
+
+test("measures decision latency through response body decoding", async () => {
+  let elapsedMilliseconds = 0;
+  const client = createDecisionClient({
+    endpoint: "https://provider.example/v1",
+    apiKey: "test-key",
+    model: "decision-model",
+    now: () => elapsedMilliseconds,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      async json() {
+        // 响应头到达并不等于一次模型调用完成；计时必须覆盖响应体读取与 JSON 解码。
+        elapsedMilliseconds = 25;
+        return {
+          status: "completed",
+          output: [{
+            content: [{
+              type: "output_text",
+              text: '{"decision":"matched","confidence":0.9}',
+            }],
+          }],
+          usage: usage(),
+        };
+      },
+    }),
+  });
+
+  const result = await client.evaluate(
+    { kind: "condition", condition: "构建完成", tags: ["browser", "dom-only"] },
+    { text: "Build succeeded" },
+    { conditionInstructions: "condition rules" },
+  );
+
+  assert.equal(result.outcome, "matched");
+  assert.equal(result.durationMs, 25);
 });
 
 function usage() {
