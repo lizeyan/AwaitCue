@@ -143,7 +143,7 @@ export function compareHumanReview(run, samples, review) {
       expected: reviewed.humanDecision,
       description: reviewed.humanRationale,
       samples: [{
-        outcome: modelOutcome(sample),
+        outcome: benchmarkOutcomeForLocalSample(sample),
         durationMs: sample.modelLatencyMilliseconds,
       }],
     };
@@ -730,9 +730,18 @@ function validateReview(
   return [...review.samples].sort((left, right) => left.id.localeCompare(right.id));
 }
 
-function modelOutcome(sample) {
+/**
+ * 将生产采样器的稳定错误类别映射为固定 benchmark 的三类失败 outcome。
+ * 生产报告和候选回放基线必须共用这一口径，否则两份失败率无法直接比较。
+ */
+export function benchmarkOutcomeForLocalSample(sample) {
   if (validHumanDecisions.has(sample.modelDecision)) return sample.modelDecision;
-  return sample.modelError ? "error" : "invalid";
+  const stableError = stableModelError(sample.modelError);
+  if (stableError === "incomplete_response") return "incomplete";
+  if (["invalid_response", "invalid_structured_output"].includes(stableError)) {
+    return "invalid";
+  }
+  return stableError === null ? "invalid" : "error";
 }
 
 /**

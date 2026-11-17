@@ -559,7 +559,56 @@ test("比较报告不会复制旧样本中的服务端错误 reason", () => {
 
   assert.equal(report.samples[0].modelError, "incomplete_response");
   assert.doesNotMatch(JSON.stringify(report), /sensitive-server-reason/);
-  assert.equal(report.summary.errorRate, 1);
+  assert.equal(report.summary.incompleteRate, 1);
+  assert.equal(report.summary.invalidRate, 0);
+  assert.equal(report.summary.errorRate, 0);
+});
+
+test("生产报告按稳定错误类别区分 incomplete、invalid 和 transport", () => {
+  const run = benchmarkRun("completed", 4);
+  run.modelFailureCount = 4;
+  const samples = [
+    benchmarkSample("0001", {
+      modelDecision: null,
+      modelConfidence: null,
+      modelError: "incomplete_response",
+    }),
+    benchmarkSample("0002", {
+      modelDecision: null,
+      modelConfidence: null,
+      modelError: "invalidStructuredOutput(decodingFailed)",
+    }),
+    benchmarkSample("0003", {
+      modelDecision: null,
+      modelConfidence: null,
+      modelError: "http_status",
+    }),
+    benchmarkSample("0004", {
+      modelDecision: null,
+      modelConfidence: null,
+      modelError: "unknown-sensitive-transport-detail",
+    }),
+  ];
+  const review = createHumanReviewManifest(run, samples);
+  for (const sample of review.samples) {
+    sample.humanDecision = "interruptible";
+    sample.humanRationale = "界面处于等待状态，可以被打断。";
+  }
+
+  const report = compareHumanReview(run, samples, review);
+
+  assert.equal(report.summary.incompleteRate, 0.25);
+  assert.equal(report.summary.invalidRate, 0.25);
+  assert.equal(report.summary.errorRate, 0.5);
+  assert.deepEqual(
+    report.summary.cases.map(({ outcomes }) => outcomes),
+    [
+      { incomplete: 1 },
+      { invalid: 1 },
+      { error: 1 },
+      { error: 1 },
+    ],
+  );
 });
 
 test("缺失人工标签或样本集合不一致时拒绝生成比较报告", () => {

@@ -14,6 +14,7 @@ import process from "node:process";
 
 import {
   applyHumanReviewLabel,
+  benchmarkOutcomeForLocalSample,
   compareHumanReview,
   createHumanReviewManifest,
   createReviewedReplayPlan,
@@ -156,10 +157,7 @@ async function main() {
       },
       samples.map((sample) => ({
         id: sample.id,
-        outcome: ["interruptible", "notInterruptible", "uncertain"]
-          .includes(sample.modelDecision)
-          ? sample.modelDecision
-          : (sample.modelError ? "error" : "invalid"),
+        outcome: benchmarkOutcomeForLocalSample(sample),
       })),
     );
     assertDistinctOutputPath(options.output, [...inputPaths, reviewPath, promptPath]);
