@@ -761,6 +761,99 @@ test("人工复核清单必须与 run.json 保存在同一私有目录", async (
   }
 });
 
+test("比较与回放报告必须保存在私有 run 目录", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "awaitcue-local-report-root-"));
+  const outsideDirectory = await mkdtemp(path.join(tmpdir(), "awaitcue-local-report-outside-"));
+  try {
+    const samplesDirectory = path.join(directory, "samples");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(samplesDirectory));
+    await chmod(directory, 0o700);
+    await chmod(samplesDirectory, 0o700);
+    await chmod(outsideDirectory, 0o700);
+    await writeFile(
+      path.join(directory, "run.json"),
+      JSON.stringify(benchmarkRun("completed", 1)),
+    );
+    await writeFile(
+      path.join(samplesDirectory, "0001.json"),
+      JSON.stringify(benchmarkSample("0001", { imageSHA256: undefined })),
+    );
+    await writeFile(path.join(samplesDirectory, "0001.jpg"), Buffer.from([0xff, 0xd8, 0xff]));
+    await chmod(path.join(directory, "run.json"), 0o600);
+    await chmod(path.join(samplesDirectory, "0001.json"), 0o600);
+    await chmod(path.join(samplesDirectory, "0001.jpg"), 0o600);
+    const reviewPath = path.join(directory, "human-review.json");
+    const prepare = spawnSync(
+      process.execPath,
+      [
+        "Scripts/review-local-interruptibility-benchmark.mjs",
+        "prepare",
+        "--run-directory",
+        directory,
+        "--output",
+        reviewPath,
+      ],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    assert.equal(prepare.status, 0, prepare.stderr);
+    const review = JSON.parse(await readFile(reviewPath, "utf8"));
+    review.samples[0].humanDecision = "notInterruptible";
+    review.samples[0].humanRationale = "正在编辑内容，需要持续专注。";
+    await writeFile(reviewPath, JSON.stringify(review));
+    await chmod(reviewPath, 0o600);
+
+    const reportPath = path.join(outsideDirectory, "comparison-report.json");
+    const report = spawnSync(
+      process.execPath,
+      [
+        "Scripts/review-local-interruptibility-benchmark.mjs",
+        "report",
+        "--run-directory",
+        directory,
+        "--review",
+        reviewPath,
+        "--output",
+        reportPath,
+      ],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    assert.notEqual(report.status, 0);
+    assert.match(report.stderr, /must be stored in the benchmark run directory/);
+    assert.equal(await access(reportPath).then(() => true, () => false), false);
+
+    const promptPath = path.join(directory, "candidate-prompt.txt");
+    await writeFile(promptPath, "只判断是否适合打断。\n", { mode: 0o600 });
+    const replayPath = path.join(outsideDirectory, "candidate-replay.json");
+    const replay = spawnSync(
+      process.execPath,
+      [
+        "Scripts/review-local-interruptibility-benchmark.mjs",
+        "replay",
+        "--run-directory",
+        directory,
+        "--review",
+        reviewPath,
+        "--prompt",
+        promptPath,
+        "--output",
+        replayPath,
+        "--base-url",
+        "https://model.example/v1",
+        "--model",
+        "decision-model",
+      ],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    assert.notEqual(replay.status, 0);
+    assert.match(replay.stderr, /must be stored in the benchmark run directory/);
+    assert.doesNotMatch(replay.stderr, /AWAITCUE_API_KEY/);
+    assert.equal(await access(replayPath).then(() => true, () => false), false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await rm(outsideDirectory, { recursive: true, force: true });
+  }
+});
+
 test("比较报告拒绝权限过宽的人工复核文件", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "awaitcue-local-private-report-"));
   try {

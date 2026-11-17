@@ -204,7 +204,9 @@ The run and samples directories must keep their private `0700` boundary. Origina
 sample JSON, and JPEG inputs must also remain regular files with no group or other permissions;
 review preparation refuses evidence whose directory or file permissions were widened or whose
 contents have an additional hard-link alias outside the canonical run layout.
-Both generated files are forced to mode `0600`, the report refuses a human-review file whose
+Human review, comparison, and replay outputs must remain directly inside the private benchmark run
+directory; the CLI rejects another directory before reading a replay API key or sending evidence.
+Both generated reports are forced to mode `0600`, and the report refuses a human-review file whose
 permissions were widened, and output paths are opened without following symbolic links. Neither
 command permits its output path to replace any `run.json`, sample JSON, JPEG, or human-review input
 that it read for the operation. Non-exclusive report output is opened without truncation first; its

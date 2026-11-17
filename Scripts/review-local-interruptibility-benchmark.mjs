@@ -100,6 +100,7 @@ async function main() {
     process.stdout.write(`Prepared ${review.samples.length} samples for human review.\n`);
     return;
   }
+  assertReportOutputLocation(options.output, root);
   if (!options.review) throw new Error("report requires --review");
   const reviewPath = path.resolve(options.review);
   await assertPrivateRegularFile(reviewPath, "human review");
@@ -181,6 +182,13 @@ async function main() {
 function assertReviewOutputLocation(outputPath, runDirectory) {
   if (path.dirname(path.resolve(outputPath)) !== path.resolve(runDirectory)) {
     throw new Error("human review must be stored in the benchmark run directory");
+  }
+}
+
+/** 逐样本报告只能留在私有 run 目录，避免误写进仓库或其他共享位置。 */
+function assertReportOutputLocation(outputPath, runDirectory) {
+  if (path.dirname(path.resolve(outputPath)) !== path.resolve(runDirectory)) {
+    throw new Error("benchmark report must be stored in the benchmark run directory");
   }
 }
 
