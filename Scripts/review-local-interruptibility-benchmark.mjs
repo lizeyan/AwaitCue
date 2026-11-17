@@ -27,8 +27,11 @@ import { createHash, randomUUID } from "node:crypto";
 
 async function main() {
   const [command, ...argumentsList] = process.argv.slice(2);
-  if (!["prepare", "status", "next", "label", "report", "replay"].includes(command)) {
-    throw new Error("first argument must be prepare, status, next, label, report, or replay");
+  if (!["prepare", "status", "next", "label", "report", "replay", "replay-preflight"]
+    .includes(command)) {
+    throw new Error(
+      "first argument must be prepare, status, next, label, report, replay, or replay-preflight",
+    );
   }
   const options = parseArguments(argumentsList);
   if (command === "status") {
@@ -107,19 +110,35 @@ async function main() {
   assertReviewOutputLocation(reviewPath, root);
   await assertPrivateRegularFile(reviewPath, "human review");
   const review = JSON.parse(await readFile(reviewPath, "utf8"));
+  if (command === "replay-preflight") {
+    await prepareReviewedReplay(options, {
+      run,
+      samples,
+      review,
+      inputPaths,
+      reviewPath,
+    });
+    process.stdout.write("Replay preflight passed.\n");
+    return;
+  }
   if (command === "replay") {
-    if (!options.prompt || !options.baseURL || !options.model) {
-      throw new Error("replay requires --prompt, --base-url, and --model");
+    const {
+      plan,
+      promptPath,
+      prompt,
+      promptSHA256,
+    } = await prepareReviewedReplay(options, {
+      run,
+      samples,
+      review,
+      inputPaths,
+      reviewPath,
+    });
+    if (!options.baseURL || !options.model) {
+      throw new Error("replay requires --base-url and --model");
     }
-    // 必须先验证盲审已完整冻结；不完整时不能读取 key、发送图片或创建半份报告。
-    const plan = createReviewedReplayPlan(run, samples, review);
     const apiKey = process.env.AWAITCUE_API_KEY;
     if (!apiKey) throw new Error("replay requires AWAITCUE_API_KEY");
-    const promptPath = path.resolve(options.prompt);
-    await assertRegularSingleLinkFile(promptPath, "candidate prompt");
-    const prompt = (await readFile(promptPath, "utf8")).trim();
-    if (prompt === "") throw new Error("candidate prompt must not be empty");
-    const promptSHA256 = createHash("sha256").update(prompt).digest("hex");
     const client = createDecisionClient({
       endpoint: options.baseURL,
       apiKey,
@@ -160,7 +179,6 @@ async function main() {
         outcome: benchmarkOutcomeForLocalSample(sample),
       })),
     );
-    assertDistinctOutputPath(options.output, [...inputPaths, reviewPath, promptPath]);
     await writePrivateJSON(options.output, report, {
       exclusive: false,
       protectedInputPaths: [...inputPaths, reviewPath, promptPath],
@@ -175,6 +193,24 @@ async function main() {
     protectedInputPaths: [...inputPaths, reviewPath],
   });
   process.stdout.write(`${JSON.stringify(summaryForConsole(report.summary), null, 2)}\n`);
+}
+
+/**
+ * 在读取模型配置与密钥前冻结回放输入；正式 replay 会再次执行同一校验，防止预检后替换。
+ */
+async function prepareReviewedReplay(
+  options,
+  { run, samples, review, inputPaths, reviewPath },
+) {
+  if (!options.prompt) throw new Error("replay requires --prompt");
+  const plan = createReviewedReplayPlan(run, samples, review);
+  const promptPath = path.resolve(options.prompt);
+  await assertRegularSingleLinkFile(promptPath, "candidate prompt");
+  const prompt = (await readFile(promptPath, "utf8")).trim();
+  if (prompt === "") throw new Error("candidate prompt must not be empty");
+  const promptSHA256 = createHash("sha256").update(prompt).digest("hex");
+  assertDistinctOutputPath(options.output, [...inputPaths, reviewPath, promptPath]);
+  return { plan, promptPath, prompt, promptSHA256 };
 }
 
 /** 终端只显示聚合指标；逐样本人工理由只留在 0600 私有报告中。 */

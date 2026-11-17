@@ -5,6 +5,12 @@ set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 defaults_domain="${AWAITCUE_DEFAULTS_DOMAIN:-org.awaitcue.AwaitCue}"
 
+# 参数、私有路径、证据摘要和人工标签必须先完整通过；错误调用不应触发 Keychain。
+node "${repository_root}/Scripts/review-local-interruptibility-benchmark.mjs" \
+  replay-preflight \
+  "$@" \
+  >/dev/null
+
 # 与 App 和固定 live benchmark 共用配置；密钥只进入当前 Node 进程，不写入参数或报告。
 AWAITCUE_BASE_URL="$(defaults read "${defaults_domain}" modelBaseURL)"
 AWAITCUE_MODEL="$(defaults read "${defaults_domain}" modelName)"

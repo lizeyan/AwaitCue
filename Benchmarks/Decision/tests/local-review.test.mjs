@@ -1311,6 +1311,42 @@ test("命令行从真实采样目录生成私有复核清单并在填写后输�
     const replayPromptPath = path.join(directory, "candidate-prompt.txt");
     const replayReportPath = path.join(directory, "candidate-replay.json");
     await writeFile(replayPromptPath, "只判断是否适合打断。\n", { mode: 0o600 });
+
+    const fakeBinaryDirectory = path.join(directory, "fake-bin");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(fakeBinaryDirectory));
+    const configurationAccessMarker = path.join(directory, "configuration-accessed");
+    const fakeDefaults = path.join(fakeBinaryDirectory, "defaults");
+    await writeFile(
+      fakeDefaults,
+      '#!/bin/sh\n: > "$AWAITCUE_TEST_CONFIGURATION_MARKER"\nexit 99\n',
+      { mode: 0o700 },
+    );
+    const prematureWrapperReplay = spawnSync(
+      path.join(repositoryRoot, "Scripts/replay-local-interruptibility-benchmark.sh"),
+      [
+        "--run-directory",
+        directory,
+        "--review",
+        reviewPath,
+        "--prompt",
+        replayPromptPath,
+        "--output",
+        replayReportPath,
+      ],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${fakeBinaryDirectory}:${process.env.PATH}`,
+          AWAITCUE_TEST_CONFIGURATION_MARKER: configurationAccessMarker,
+        },
+      },
+    );
+    assert.notEqual(prematureWrapperReplay.status, 0);
+    assert.match(prematureWrapperReplay.stderr, /requires a valid humanDecision/);
+    await assert.rejects(access(configurationAccessMarker));
+
     const prematureReplay = spawnSync(
       process.execPath,
       [
