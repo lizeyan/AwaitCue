@@ -160,6 +160,7 @@ export function compareHumanReview(run, samples, review) {
   return {
     version: 1,
     generatedAt: new Date().toISOString(),
+    sampling: localSamplingDescription(),
     run: {
       startedAt: run.startedAt,
       intendedEndAt: run.intendedEndAt,
@@ -314,6 +315,7 @@ export function createReviewedReplayReport(plan, results, configuration, baselin
     version: 1,
     kind: "interruptibility-reviewed-replay-report",
     generatedAt: new Date().toISOString(),
+    sampling: localSamplingDescription(),
     sourceRun: {
       sampleCount: plan.sourceRun.sampleCount,
       baselinePromptSHA256: plan.sourceRun.baselinePromptSHA256,
@@ -370,6 +372,14 @@ export function createReviewedReplayReport(plan, results, configuration, baselin
         correct: result.outcome === sample.expected,
       };
     }),
+  };
+}
+
+/** 真实采样只保留连续变化后的画面，因此准确率不能解释成用户时间占比分布。 */
+function localSamplingDescription() {
+  return {
+    timeWeighted: false,
+    consecutiveIdenticalImagesIncluded: false,
   };
 }
 

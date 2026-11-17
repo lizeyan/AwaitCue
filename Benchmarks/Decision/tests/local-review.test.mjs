@@ -100,6 +100,10 @@ test("候选 prompt 回放只接受冻结标签且报告不复制原始证据", 
   assert.equal(report.summary.accuracy, 1);
   assert.equal(report.summary.meanCaseStability, null);
   assert.equal(report.summary.tokens.input, 100);
+  assert.deepEqual(report.sampling, {
+    timeWeighted: false,
+    consecutiveIdenticalImagesIncluded: false,
+  });
   assert.equal(report.samples[0].correct, true);
   assert.deepEqual(report.pairedComparison, {
     sampleCount: 1,
@@ -404,6 +408,10 @@ test("人工标签完整后才比较准确率、混淆矩阵和延迟", () => {
   assert.equal(report.summary.meanCaseStability, null);
   assert.equal(report.summary.fullyStableCaseRate, null);
   assert.equal(report.summary.tokens, null);
+  assert.deepEqual(report.sampling, {
+    timeWeighted: false,
+    consecutiveIdenticalImagesIncluded: false,
+  });
   assert.ok(report.summary.cases.every(({ stability }) => stability === null));
   assert.deepEqual(report.summary.latencyMs, { p50: 300, p95: 500, max: 500 });
   assert.deepEqual(report.summary.confusion.interruptibility.interruptible, {
