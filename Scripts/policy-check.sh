@@ -9,6 +9,16 @@ if git ls-files --error-unmatch .codex/session-state.md >/dev/null 2>&1; then
   exit 1
 fi
 
+# `.gitignore` 不能阻止显式 `git add -f`；这些文件包含真实屏幕证据、人工理由或逐样本模型结果。
+private_benchmark_artifacts="$(git ls-files | grep -E \
+  '(^|/)\.local/|(^|/)(human-review|comparison-report|candidate-replay)\.json$|(^|/)macos-24h-[^/]+/(run\.json|samples/)|(^|/)interruptibility-[0-9]{8}-[0-9]{6}\.json$' \
+  || true)"
+if [[ -n "${private_benchmark_artifacts}" ]]; then
+  echo "Private benchmark artifacts must remain local and untracked:" >&2
+  printf '%s\n' "${private_benchmark_artifacts}" >&2
+  exit 1
+fi
+
 if git grep -nEI '(Authorization:[[:space:]]*Bearer[[:space:]]+[A-Za-z0-9._-]{16,}|sk-[A-Za-z0-9_-]{16,})' -- ':!Scripts/policy-check.sh'; then
   echo "A value resembling an API credential is tracked" >&2
   exit 1

@@ -126,6 +126,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Test repository policy behavior
+        run: ./Scripts/test-policy-check.sh
       - name: Check tracked files and credentials
         run: ./Scripts/policy-check.sh
 

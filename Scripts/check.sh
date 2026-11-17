@@ -3,6 +3,7 @@
 set -euo pipefail
 
 bash -n Scripts/*.sh
+./Scripts/test-policy-check.sh
 swift build -Xswiftc -warnings-as-errors
 ./Scripts/run-macos-e2e.sh
 ./Scripts/test-app-resource-bundle.sh
