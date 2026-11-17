@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import {
   access,
   chmod,
@@ -20,6 +21,8 @@ import { fileURLToPath } from "node:url";
 import {
   compareHumanReview,
   createHumanReviewManifest,
+  createReviewedReplayPlan,
+  createReviewedReplayReport,
 } from "../lib/local-review.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -50,6 +53,52 @@ test("人工复核清单只在采样完成后生成且不泄露模型结论", ()
   }]);
   assert.doesNotMatch(serialized, /modelDecision|modelConfidence|modelLatency|modelError/);
   assert.doesNotMatch(serialized, /notInterruptible|0\.98|3285/);
+});
+
+test("候选 prompt 回放只接受冻结标签且报告不复制原始证据", () => {
+  const run = benchmarkRun("completed", 1);
+  const samples = [benchmarkSample("0001")];
+  const incompleteReview = createHumanReviewManifest(run, samples);
+
+  assert.throws(
+    () => createReviewedReplayPlan(run, samples, incompleteReview),
+    /requires a valid humanDecision/,
+  );
+
+  const review = {
+    ...incompleteReview,
+    samples: [{
+      ...incompleteReview.samples[0],
+      humanDecision: "notInterruptible",
+      humanRationale: "正在编辑技术内容，需要持续专注。",
+    }],
+  };
+  const plan = createReviewedReplayPlan(run, samples, review);
+  assert.equal(plan.samples[0].expected, "notInterruptible");
+  assert.doesNotMatch(JSON.stringify(plan), /modelDecision|modelConfidence|modelLatency/);
+
+  const report = createReviewedReplayReport(plan, [{
+    id: "0001",
+    outcome: "notInterruptible",
+    confidence: 0.93,
+    durationMs: 1200,
+    usage: {
+      inputTokens: 100,
+      outputTokens: 20,
+      reasoningTokens: 0,
+      cachedTokens: 10,
+      cacheWriteTokens: 0,
+    },
+  }], {
+    model: "decision-model",
+    endpointHost: "model.example",
+    promptSHA256: "d".repeat(64),
+  });
+  assert.equal(report.summary.accuracy, 1);
+  assert.equal(report.summary.meanCaseStability, null);
+  assert.equal(report.summary.tokens.input, 100);
+  assert.equal(report.samples[0].correct, true);
+  assert.doesNotMatch(JSON.stringify(report), /contextText|imageFile|imageSHA256|ChatGPT/);
 });
 
 test("提前标记完成的 run 不能冒充完整 24 小时采样", () => {
@@ -989,6 +1038,33 @@ test("命令行从真实采样目录生成私有复核清单并在填写后输�
     });
     assert.doesNotMatch(emptyStatus.stdout, /model|contextText|imageFile/);
 
+    const replayPromptPath = path.join(directory, "candidate-prompt.txt");
+    const replayReportPath = path.join(directory, "candidate-replay.json");
+    await writeFile(replayPromptPath, "只判断是否适合打断。\n", { mode: 0o600 });
+    const prematureReplay = spawnSync(
+      process.execPath,
+      [
+        "Scripts/review-local-interruptibility-benchmark.mjs",
+        "replay",
+        "--run-directory",
+        directory,
+        "--review",
+        reviewPath,
+        "--prompt",
+        replayPromptPath,
+        "--output",
+        replayReportPath,
+        "--base-url",
+        "https://model.example/v1",
+        "--model",
+        "decision-model",
+      ],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    assert.notEqual(prematureReplay.status, 0);
+    assert.match(prematureReplay.stderr, /requires a valid humanDecision/);
+    await assert.rejects(access(replayReportPath));
+
     const next = spawnSync(
       process.execPath,
       [
@@ -1111,6 +1187,51 @@ test("命令行从真实采样目录生成私有复核清单并在填写后输�
     );
     assert.equal(completedNext.status, 0, completedNext.stderr);
     assert.equal(completedNext.stdout, "null\n");
+
+    const replayServer = await startResponsesServer();
+    try {
+      const replayResult = spawnSync(
+        process.execPath,
+        [
+          "Scripts/review-local-interruptibility-benchmark.mjs",
+          "replay",
+          "--run-directory",
+          directory,
+          "--review",
+          reviewPath,
+          "--prompt",
+          replayPromptPath,
+          "--output",
+          replayReportPath,
+          "--base-url",
+          `http://127.0.0.1:${replayServer.port}/v1`,
+          "--model",
+          "decision-model",
+        ],
+        {
+          cwd: repositoryRoot,
+          encoding: "utf8",
+          env: { ...process.env, AWAITCUE_API_KEY: "test-key" },
+        },
+      );
+      assert.equal(replayResult.status, 0, replayResult.stderr);
+      assert.doesNotMatch(replayResult.stdout, /contextText|imageFile|imageSHA256|ChatGPT/);
+      const replayReport = JSON.parse(await readFile(replayReportPath, "utf8"));
+      assert.equal(replayReport.summary.accuracy, 1);
+      assert.equal(replayReport.summary.tokens.input, 123);
+      assert.equal(replayReport.samples[0].modelDecision, "notInterruptible");
+      assert.equal(replayReport.samples[0].correct, true);
+      assert.match(replayReport.configuration.promptSHA256, /^[0-9a-f]{64}$/);
+      assert.doesNotMatch(
+        JSON.stringify(replayReport),
+        /contextText|imageFile|imageSHA256|前台应用：ChatGPT/,
+      );
+      assert.equal((await stat(replayReportPath)).mode & 0o777, 0o600);
+    } finally {
+      replayServer.process.kill("SIGTERM");
+      await once(replayServer.process, "exit");
+    }
+
     const reportPath = path.join(directory, "comparison-report.json");
     const samplePath = path.join(samplesDirectory, "0001.json");
     const originalSampleRecord = await readFile(samplePath, "utf8");
@@ -1201,6 +1322,44 @@ test("命令行从真实采样目录生成私有复核清单并在填写后输�
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+/** 启动独立子进程中的最小 Responses 服务，让同步 CLI 调用也能完成真实 HTTP 往返。 */
+async function startResponsesServer() {
+  const source = String.raw`
+    const http = require("node:http");
+    const response = JSON.stringify({
+      status: "completed",
+      output: [{
+        content: [{
+          type: "output_text",
+          text: JSON.stringify({ decision: "notInterruptible", confidence: 0.94 }),
+        }],
+      }],
+      usage: {
+        input_tokens: 123,
+        output_tokens: 22,
+        input_tokens_details: { cached_tokens: 10, cache_write_tokens: 0 },
+        output_tokens_details: { reasoning_tokens: 0 },
+      },
+    });
+    const server = http.createServer((request, reply) => {
+      request.resume();
+      request.on("end", () => {
+        reply.writeHead(200, { "content-type": "application/json" });
+        reply.end(response);
+      });
+    });
+    process.on("SIGTERM", () => server.close(() => process.exit(0)));
+    server.listen(0, "127.0.0.1", () => {
+      process.stdout.write(String(server.address().port) + "\n");
+    });
+  `;
+  const server = spawn(process.execPath, ["-e", source], {
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  const [chunk] = await once(server.stdout, "data");
+  return { process: server, port: Number(String(chunk).trim()) };
+}
 
 function benchmarkRun(status, sampleCount) {
   return {

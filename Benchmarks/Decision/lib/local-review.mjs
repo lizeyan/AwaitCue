@@ -216,6 +216,136 @@ export function compareHumanReview(run, samples, review) {
 }
 
 /**
+ * 人工标签全部冻结后，生成候选 prompt 回放所需的最小证据计划。
+ * 计划不读取或复制采样时的模型判断，避免候选结果被旧答案锚定。
+ */
+export function createReviewedReplayPlan(run, samples, review) {
+  validateCompletedRun(run, samples);
+  const samplesByID = new Map(samples.map((sample) => [sample.id, sample]));
+  const reviewedSamples = validateReview(
+    review,
+    samplesByID,
+    run.activityEvidenceValidFromSampleID,
+    run.runRecordSHA256,
+  );
+  return {
+    version: 1,
+    kind: "interruptibility-reviewed-replay-plan",
+    sourceRun: {
+      runRecordSHA256: run.runRecordSHA256,
+      sampleCount: run.sampleCount,
+    },
+    samples: reviewedSamples.map((reviewed) => ({
+      id: reviewed.id,
+      expected: reviewed.humanDecision,
+      description: reviewed.humanRationale,
+      contextText: reviewed.contextText,
+      imageFile: reviewed.imageFile,
+      imageSHA256: reviewed.imageSHA256,
+    })),
+  };
+}
+
+/**
+ * 汇总同一批人工标签上的候选 prompt 结果。
+ * 每张真实画面只回放一次，因此不把单次结果伪装成稳定性；Responses usage 仍可如实汇总。
+ */
+export function createReviewedReplayReport(plan, results, configuration) {
+  if (plan?.kind !== "interruptibility-reviewed-replay-plan"
+      || !Array.isArray(plan.samples)) {
+    throw new Error("invalid reviewed replay plan");
+  }
+  if (!/^[0-9a-f]{64}$/.test(configuration?.promptSHA256 ?? "")) {
+    throw new Error("reviewed replay prompt SHA-256 is invalid");
+  }
+  if (typeof configuration?.model !== "string" || configuration.model === ""
+      || typeof configuration?.endpointHost !== "string"
+      || configuration.endpointHost === "") {
+    throw new Error("reviewed replay model configuration is invalid");
+  }
+  const resultIDs = results.map(({ id }) => id);
+  const expectedIDs = plan.samples.map(({ id }) => id);
+  if (new Set(resultIDs).size !== resultIDs.length
+      || resultIDs.length !== expectedIDs.length
+      || [...resultIDs].sort().some((id, index) => id !== [...expectedIDs].sort()[index])) {
+    throw new Error("reviewed replay result IDs do not match the frozen plan");
+  }
+  const resultsByID = new Map(results.map((result) => [result.id, result]));
+  const benchmarkCases = plan.samples.map((sample) => {
+    const result = resultsByID.get(sample.id);
+    validateReplayResult(sample.id, result);
+    return {
+      id: sample.id,
+      kind: "interruptibility",
+      expected: sample.expected,
+      description: sample.description,
+      samples: [result],
+    };
+  });
+  const summary = aggregateBenchmark(benchmarkCases);
+  const replaySummary = {
+    ...summary,
+    meanCaseStability: null,
+    fullyStableCaseRate: null,
+    cases: summary.cases.map((entry) => ({ ...entry, stability: null })),
+  };
+  return {
+    version: 1,
+    kind: "interruptibility-reviewed-replay-report",
+    generatedAt: new Date().toISOString(),
+    sourceRun: plan.sourceRun,
+    configuration: {
+      model: configuration.model,
+      endpointHost: configuration.endpointHost,
+      promptSHA256: configuration.promptSHA256,
+    },
+    summary: replaySummary,
+    samples: plan.samples.map((sample) => {
+      const result = resultsByID.get(sample.id);
+      const hasDecision = validHumanDecisions.has(result.outcome);
+      return {
+        id: sample.id,
+        humanDecision: sample.expected,
+        humanRationale: sample.description,
+        modelDecision: hasDecision ? result.outcome : null,
+        modelConfidence: hasDecision ? result.confidence : null,
+        modelLatencyMilliseconds: result.durationMs,
+        modelError: stableReplayError(result),
+        correct: result.outcome === sample.expected,
+      };
+    }),
+  };
+}
+
+/** 候选回放的单次结果也必须遵循生产三态与可比较耗时契约。 */
+function validateReplayResult(id, result) {
+  if (!result || !Number.isFinite(result.durationMs) || result.durationMs < 0) {
+    throw new Error(`reviewed replay sample ${id} latency is invalid`);
+  }
+  if (validHumanDecisions.has(result.outcome)) {
+    if (!Number.isFinite(result.confidence)
+        || result.confidence < 0
+        || result.confidence > 1) {
+      throw new Error(`reviewed replay sample ${id} confidence is invalid`);
+    }
+    return;
+  }
+  if (!["incomplete", "invalid", "error"].includes(result.outcome)) {
+    throw new Error(`reviewed replay sample ${id} outcome is invalid`);
+  }
+}
+
+/** 外部服务错误只进入稳定类别，不能把服务端 reason 或传输文本复制进报告。 */
+function stableReplayError(result) {
+  if (validHumanDecisions.has(result.outcome)) return null;
+  if (result.outcome === "incomplete") return "incomplete_response";
+  if (result.outcome === "invalid") return "invalid_response";
+  return typeof result.reason === "string" && /^HTTP \d{3}$/.test(result.reason)
+    ? "http_status"
+    : "transport";
+}
+
+/**
  * 本机长期采样对每个屏幕状态只判断一次，且当前样本未记录 token usage。
  * 因此保留准确率、失败率、混淆和延迟，但明确把不可测指标设为 null，避免把单次观察伪装成稳定性 100%。
  */

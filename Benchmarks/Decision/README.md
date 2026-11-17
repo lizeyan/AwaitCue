@@ -72,6 +72,11 @@ Live runs are intentionally not part of required GitHub CI: they cost tokens, de
 provider, and measure nondeterministic behavior. CI verifies that the fixed corpus and scoring logic
 remain valid. Release candidates should run the live benchmark separately.
 
+`latencyMs` measures the complete non-streaming request through response-body read, JSON decoding,
+and decision classification. This path does not expose first-token events, so it intentionally does
+not invent TTFT or TPOT from the end-to-end duration. Responses usage still reports input, output,
+reasoning, cached-input, and cache-write tokens when the configured provider returns those fields.
+
 On a Mac where AwaitCue already has a saved model configuration, run only the interruption corpus
 without copying credentials into the shell history:
 
@@ -165,6 +170,26 @@ Scripts/review-local-interruptibility-benchmark.mjs report \
   --review .local/benchmarks/<run>/human-review.json \
   --output .local/benchmarks/<run>/comparison-report.json
 ```
+
+After every human label is frozen, a candidate prompt can be replayed once against the exact same
+private evidence. The command reads the model configuration and Keychain item already saved by
+AwaitCue; neither the key nor raw evidence is copied into the report:
+
+```bash
+Scripts/replay-local-interruptibility-benchmark.sh \
+  --run-directory .local/benchmarks/<run> \
+  --review .local/benchmarks/<run>/human-review.json \
+  --prompt .local/benchmarks/candidate-interruptibility.txt \
+  --output .local/benchmarks/<run>/candidate-replay.json
+```
+
+Replay refuses a running or shortened run, incomplete human labels, changed run/sample/image bytes,
+non-private evidence, symbolic or additional hard links, and output paths that alias an input. Each
+image digest is checked again immediately before the request. The private `0600` report contains
+only labels, model decisions, confidence, stable error categories, end-to-end latency, aggregate
+usage, and accuracy; it omits activity context, image paths, and image digests. Because each real
+screen state is replayed once, stability metrics remain `null` instead of claiming artificial 100%
+stability.
 
 The run and samples directories must keep their private `0700` boundary. Original `run.json`,
 sample JSON, and JPEG inputs must also remain regular files with no group or other permissions;

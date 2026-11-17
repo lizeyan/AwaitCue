@@ -16,15 +16,18 @@ import {
   applyHumanReviewLabel,
   compareHumanReview,
   createHumanReviewManifest,
+  createReviewedReplayPlan,
+  createReviewedReplayReport,
   nextIncompleteHumanReviewSample,
   summarizeHumanReviewProgress,
 } from "../Benchmarks/Decision/lib/local-review.mjs";
+import { createDecisionClient } from "../Benchmarks/Decision/lib/responses.mjs";
 import { createHash, randomUUID } from "node:crypto";
 
 async function main() {
   const [command, ...argumentsList] = process.argv.slice(2);
-  if (!["prepare", "status", "next", "label", "report"].includes(command)) {
-    throw new Error("first argument must be prepare, status, next, label, or report");
+  if (!["prepare", "status", "next", "label", "report", "replay"].includes(command)) {
+    throw new Error("first argument must be prepare, status, next, label, report, or replay");
   }
   const options = parseArguments(argumentsList);
   if (command === "status") {
@@ -101,6 +104,59 @@ async function main() {
   const reviewPath = path.resolve(options.review);
   await assertPrivateRegularFile(reviewPath, "human review");
   const review = JSON.parse(await readFile(reviewPath, "utf8"));
+  if (command === "replay") {
+    if (!options.prompt || !options.baseURL || !options.model) {
+      throw new Error("replay requires --prompt, --base-url, and --model");
+    }
+    // 必须先验证盲审已完整冻结；不完整时不能读取 key、发送图片或创建半份报告。
+    const plan = createReviewedReplayPlan(run, samples, review);
+    const apiKey = process.env.AWAITCUE_API_KEY;
+    if (!apiKey) throw new Error("replay requires AWAITCUE_API_KEY");
+    const promptPath = path.resolve(options.prompt);
+    await assertRegularSingleLinkFile(promptPath, "candidate prompt");
+    const prompt = (await readFile(promptPath, "utf8")).trim();
+    if (prompt === "") throw new Error("candidate prompt must not be empty");
+    const promptSHA256 = createHash("sha256").update(prompt).digest("hex");
+    const client = createDecisionClient({
+      endpoint: options.baseURL,
+      apiKey,
+      model: options.model,
+    });
+    const results = [];
+    for (const sample of plan.samples) {
+      const imagePath = path.resolve(root, sample.imageFile);
+      await assertPrivateRegularFile(imagePath, `sample ${sample.id} image`);
+      const image = await readFile(imagePath);
+      const currentDigest = createHash("sha256").update(image).digest("hex");
+      if (currentDigest !== sample.imageSHA256) {
+        throw new Error(`sample ${sample.id} image digest changed before replay`);
+      }
+      const result = await client.evaluate(
+        {
+          kind: "interruptibility",
+          tags: ["active-window", "screen-evidence"],
+        },
+        {
+          text: sample.contextText,
+          image: { mediaType: "image/jpeg", data: image },
+        },
+        { interruptibilityInstructions: prompt },
+      );
+      results.push({ id: sample.id, ...result });
+    }
+    const report = createReviewedReplayReport(plan, results, {
+      model: options.model,
+      endpointHost: new URL(options.baseURL).host,
+      promptSHA256,
+    });
+    assertDistinctOutputPath(options.output, [...inputPaths, reviewPath, promptPath]);
+    await writePrivateJSON(options.output, report, {
+      exclusive: false,
+      protectedInputPaths: [...inputPaths, reviewPath, promptPath],
+    });
+    process.stdout.write(`${JSON.stringify(report.summary, null, 2)}\n`);
+    return;
+  }
   const report = compareHumanReview(run, samples, review);
   assertDistinctOutputPath(options.output, [...inputPaths, reviewPath]);
   await writePrivateJSON(options.output, report, {
@@ -208,6 +264,17 @@ async function assertPrivateRegularFile(filePath, label) {
   }
 }
 
+/** 候选 prompt 可以来自仓库资源，但也必须是无别名的普通文件，避免路径替换。 */
+async function assertRegularSingleLinkFile(filePath, label) {
+  const attributes = await lstat(filePath);
+  if (!attributes.isFile()) {
+    throw new Error(`${label} must be a regular file`);
+  }
+  if (attributes.nlink !== 1) {
+    throw new Error(`${label} must not have additional hard links`);
+  }
+}
+
 /** JSON 复核产物可能包含本机活动摘要，因此无论新建或覆盖都强制仅当前用户可读。 */
 async function writePrivateJSON(outputPath, value, { exclusive, protectedInputPaths }) {
   const resolved = path.resolve(outputPath);
@@ -304,6 +371,12 @@ function parseArguments(argumentsList) {
       options.decision = nextValue(argumentsList, ++index, argument);
     } else if (argument === "--rationale") {
       options.rationale = nextValue(argumentsList, ++index, argument);
+    } else if (argument === "--prompt") {
+      options.prompt = nextValue(argumentsList, ++index, argument);
+    } else if (argument === "--base-url") {
+      options.baseURL = nextValue(argumentsList, ++index, argument);
+    } else if (argument === "--model") {
+      options.model = nextValue(argumentsList, ++index, argument);
     } else {
       throw new Error(`unknown argument: ${argument}`);
     }
