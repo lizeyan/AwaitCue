@@ -135,18 +135,65 @@ struct AppTargetAvailabilityProvider: HookRuntimeTargetAvailabilityProvider {
 }
 
 /// 采集当前前台窗口和有限输入活动摘要，供全部已满足 Hook 共享一次判断。
+struct ActiveApplicationSnapshot: Equatable, Sendable {
+    let bundleIdentifier: String
+    let localizedName: String
+}
+
+/// 采集当前前台窗口和有限输入活动摘要，供全部已满足 Hook 共享一次判断。
 struct AppActiveEvidenceProvider: HookRuntimeActiveEvidenceProvider {
     let privacyExclusionStore: AppPrivacyExclusionStore
     let activeBrowserHostResolver: any ActiveBrowserHostResolving
-    private let captureService = ScreenCaptureService()
+    private let frontmostApplication: @Sendable () async -> ActiveApplicationSnapshot?
+    private let discoverWindows: @Sendable () async throws -> [DiscoveredWindow]
+    private let captureWindow: @Sendable (WindowTarget) async throws -> WindowCaptureObservation
+
+    /// 生产路径仍使用 AppKit 和 ScreenCaptureKit；额外的闭包只用于验证隐私检查先于系统截图。
+    init(
+        privacyExclusionStore: AppPrivacyExclusionStore,
+        activeBrowserHostResolver: any ActiveBrowserHostResolving
+    ) {
+        let captureService = ScreenCaptureService()
+        self.init(
+            privacyExclusionStore: privacyExclusionStore,
+            activeBrowserHostResolver: activeBrowserHostResolver,
+            frontmostApplication: {
+                await MainActor.run {
+                    guard let application = NSWorkspace.shared.frontmostApplication,
+                          let bundleIdentifier = application.bundleIdentifier
+                    else {
+                        return nil
+                    }
+                    return ActiveApplicationSnapshot(
+                        bundleIdentifier: bundleIdentifier,
+                        localizedName: application.localizedName ?? bundleIdentifier
+                    )
+                }
+            },
+            discoverWindows: { try await captureService.discoverWindows() },
+            captureWindow: { try await captureService.capture($0) }
+        )
+    }
+
+    init(
+        privacyExclusionStore: AppPrivacyExclusionStore,
+        activeBrowserHostResolver: any ActiveBrowserHostResolving,
+        frontmostApplication: @escaping @Sendable () async -> ActiveApplicationSnapshot?,
+        discoverWindows: @escaping @Sendable () async throws -> [DiscoveredWindow],
+        captureWindow: @escaping @Sendable (WindowTarget) async throws -> WindowCaptureObservation
+    ) {
+        self.privacyExclusionStore = privacyExclusionStore
+        self.activeBrowserHostResolver = activeBrowserHostResolver
+        self.frontmostApplication = frontmostApplication
+        self.discoverWindows = discoverWindows
+        self.captureWindow = captureWindow
+    }
 
     func currentEvidence() async throws -> ModelEvidence {
-        let frontmostApplication = await MainActor.run {
-            NSWorkspace.shared.frontmostApplication
-        }
-        guard let bundleIdentifier = frontmostApplication?.bundleIdentifier else {
+        guard let frontmostApplication = await frontmostApplication() else {
             throw HookRuntimeEvidenceError.targetUnavailable
         }
+        let bundleIdentifier = frontmostApplication.bundleIdentifier
         let exclusionRules = privacyExclusionStore.rules()
         guard !exclusionRules.excludes(applicationBundleIdentifier: bundleIdentifier) else {
             // 排除判断必须发生在窗口发现和截图之前，确保像素不会离开本机采集边界。
@@ -178,7 +225,7 @@ struct AppActiveEvidenceProvider: HookRuntimeActiveEvidenceProvider {
         }
         let windows: [DiscoveredWindow]
         do {
-            windows = try await captureService.discoverWindows()
+            windows = try await discoverWindows()
         } catch ScreenCaptureError.capturePermissionMissing {
             throw HookRuntimeEvidenceError.capturePermissionMissing
         }
@@ -194,7 +241,7 @@ struct AppActiveEvidenceProvider: HookRuntimeActiveEvidenceProvider {
             initialTitle: window.title,
             normalizedRegion: NormalizedRegion(x: 0, y: 0, width: 1, height: 1)
         )
-        let observation = try await captureService.capture(target)
+        let observation = try await captureWindow(target)
         guard observation.availability == .available,
               let image = observation.image
         else {
@@ -223,12 +270,9 @@ struct AppActiveEvidenceProvider: HookRuntimeActiveEvidenceProvider {
         else {
             throw HookRuntimeEvidenceError.targetUnavailable
         }
-        let secondsSinceInput = CGEventSource.secondsSinceLastEventType(
-            .combinedSessionState,
-            eventType: .null
-        )
+        let secondsSinceInput = Self.secondsSinceLastUserInput()
         let summary = """
-        前台应用：\(frontmostApplication?.localizedName ?? bundleIdentifier)
+        前台应用：\(frontmostApplication.localizedName)
         窗口标题：\(window.title)
         距最近输入约：\(Int(secondsSinceInput)) 秒
         """
@@ -236,6 +280,21 @@ struct AppActiveEvidenceProvider: HookRuntimeActiveEvidenceProvider {
             text: summary,
             image: ModelImage(data: jpeg, mediaType: "image/jpeg")
         )
+    }
+
+    /// 返回最近一次键盘、鼠标或数位板输入后的秒数，作为模型判断用户是否正在操作的辅助证据。
+    static func secondsSinceLastUserInput(
+        _ secondsSinceEvent: (CGEventType) -> TimeInterval = {
+            CGEventSource.secondsSinceLastEventType(
+                .combinedSessionState,
+                eventType: $0
+            )
+        }
+    ) -> TimeInterval {
+        // CoreGraphics 用 UInt32.max 表示 kCGAnyInputEventType，但该 C 宏不会自动导入 Swift。
+        // `.null` 只查询空事件，会产生从 WindowServer 启动以来的巨大时长，不能代表用户活动。
+        let anyInputEvent = CGEventType(rawValue: UInt32.max)!
+        return secondsSinceEvent(anyInputEvent)
     }
 
     private static func frontmostWindow(

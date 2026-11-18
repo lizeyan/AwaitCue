@@ -57,6 +57,7 @@ function summarizeCase(entry) {
     id: entry.id,
     kind: entry.kind,
     expected: entry.expected,
+    description: entry.description,
     runs: entry.samples.length,
     correctRuns: entry.samples.filter((sample) => sample.outcome === entry.expected).length,
     stability: divide(modalCount, entry.samples.length),

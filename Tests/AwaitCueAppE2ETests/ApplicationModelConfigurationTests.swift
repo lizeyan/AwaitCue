@@ -57,6 +57,87 @@ struct ApplicationModelConfigurationTests {
     }
 
     @MainActor
+    @Test("锁屏启动本机 benchmark 时不读取 Keychain 并等待会话恢复")
+    func lockedLocalBenchmarkDefersKeychainAccess() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fixture = try ModelConfigurationFixture(
+            preparationResult: .success(preparedCondition),
+            initialSecret: "secret",
+            initialConfiguration: true,
+            environmentOverrides: [
+                "AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK": "1",
+                "AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK_DIRECTORY": directory.path,
+            ],
+            isUserSessionUnlocked: { false }
+        )
+        defer {
+            fixture.cleanup()
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        #expect(fixture.secretStore.loadCount == 0)
+        #expect(fixture.model.apiKey.isEmpty)
+        #expect(fixture.model.modelStatus == .notConfigured)
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+    }
+
+    @MainActor
+    @Test("显式 benchmark 通过匿名描述符读取密钥且不再访问 App Keychain")
+    func localBenchmarkUsesInjectedDescriptorSecret() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fixture = try ModelConfigurationFixture(
+            preparationResult: .success(preparedCondition),
+            initialSecret: "keychain-secret",
+            initialConfiguration: true,
+            environmentOverrides: [
+                "AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK": "1",
+                "AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK_DIRECTORY": directory.path,
+                "AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK_API_KEY_FD": "3",
+            ],
+            localBenchmarkSecretLoader: { environment in
+                #expect(environment["AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK_API_KEY_FD"] == "3")
+                return "descriptor-secret"
+            }
+        )
+        defer {
+            fixture.cleanup()
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        #expect(fixture.model.apiKey == "descriptor-secret")
+        #expect(fixture.secretStore.loadCount == 0)
+        #expect(fixture.model.modelStatus == .connected)
+    }
+
+    @MainActor
+    @Test("显式描述符为空时不降级读取 Keychain")
+    func emptyLocalBenchmarkDescriptorDoesNotFallBackToKeychain() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fixture = try ModelConfigurationFixture(
+            preparationResult: .success(preparedCondition),
+            initialSecret: "keychain-secret",
+            initialConfiguration: true,
+            environmentOverrides: [
+                "AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK": "1",
+                "AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK_DIRECTORY": directory.path,
+                "AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK_API_KEY_FD": "3",
+            ],
+            localBenchmarkSecretLoader: { _ in nil }
+        )
+        defer {
+            fixture.cleanup()
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        #expect(fixture.model.apiKey.isEmpty)
+        #expect(fixture.secretStore.loadCount == 0)
+        #expect(fixture.model.modelStatus == .notConfigured)
+    }
+
+    @MainActor
     @Test("未确认 hostname 时不请求模型也不保存密钥")
     func unconfirmedHostnameCannotBeSaved() async throws {
         let fixture = try ModelConfigurationFixture(
@@ -332,7 +413,11 @@ private final class ModelConfigurationFixture {
         initialSecret: String? = nil,
         initialConfiguration: Bool = false,
         browserBindingOperations: BrowserBindingOperations? = nil,
-        environmentOverrides: [String: String] = [:]
+        environmentOverrides: [String: String] = [:],
+        isUserSessionUnlocked: @escaping @Sendable () -> Bool = { true },
+        localBenchmarkSecretLoader: @escaping @Sendable ([String: String]) throws -> String? = {
+            _ in nil
+        }
     ) throws {
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -360,7 +445,9 @@ private final class ModelConfigurationFixture {
             secretStore: secretStore,
             globalHotKeyFactory: { _, _ in NoopModelHotKeyController() },
             modelClientFactory: { _, _, _ in client },
-            browserBindingOperations: browserBindingOperations
+            browserBindingOperations: browserBindingOperations,
+            isUserSessionUnlocked: isUserSessionUnlocked,
+            localBenchmarkSecretLoader: localBenchmarkSecretLoader
         )
     }
 

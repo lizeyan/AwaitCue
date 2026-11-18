@@ -19,7 +19,7 @@ test("aggregates user-labeled decisions, stability, failures, latency, and token
       sample("interruptible", 700),
       sample("interruptible", 800),
       sample("interruptible", 900, { reasoningTokens: 2 }),
-    ]),
+    ], "普通文章阅读可以被打断"),
   ]);
 
   assert.equal(report.caseCount, 3);
@@ -56,17 +56,27 @@ test("aggregates user-labeled decisions, stability, failures, latency, and token
     requestCacheHitRate: 2 / 9,
   });
   assert.deepEqual(
-    report.cases.map(({ id, stability, correctRuns }) => ({ id, stability, correctRuns })),
+    report.cases.map(({ id, stability, correctRuns, description }) => ({
+      id,
+      stability,
+      correctRuns,
+      description,
+    })),
     [
-      { id: "condition-ready", stability: 2 / 3, correctRuns: 2 },
-      { id: "condition-pending", stability: 1 / 3, correctRuns: 1 },
-      { id: "interruptible-reading", stability: 1, correctRuns: 3 },
+      { id: "condition-ready", stability: 2 / 3, correctRuns: 2, description: undefined },
+      { id: "condition-pending", stability: 1 / 3, correctRuns: 1, description: undefined },
+      {
+        id: "interruptible-reading",
+        stability: 1,
+        correctRuns: 3,
+        description: "普通文章阅读可以被打断",
+      },
     ],
   );
 });
 
-function benchmarkCase(id, kind, expected, samples) {
-  return { id, kind, expected, samples };
+function benchmarkCase(id, kind, expected, samples, description) {
+  return { id, kind, expected, samples, description };
 }
 
 function sample(outcome, durationMs, tokenOverrides = {}) {

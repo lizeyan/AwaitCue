@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <rect width="800" height="450" fill="#171717"/>
+  <rect x="34" y="26" width="732" height="398" rx="14" fill="#242424"/>
+  <rect x="72" y="72" width="250" height="250" rx="10" fill="#334155"/>
+  <circle cx="197" cy="197" r="76" fill="#111827"/><circle cx="197" cy="197" r="22" fill="#94a3b8"/>
+  <text x="372" y="112" font-family="-apple-system,sans-serif" font-size="16" fill="#a3a3a3">NOW PLAYING</text>
+  <text x="372" y="162" font-family="-apple-system,sans-serif" font-size="34" font-weight="700" fill="#fff">Late afternoon</text>
+  <text x="372" y="198" font-family="-apple-system,sans-serif" font-size="20" fill="#d4d4d4">Instrumental Focus</text>
+  <text x="372" y="262" font-family="-apple-system,sans-serif" font-size="16" fill="#a3a3a3">2:14</text>
+  <line x1="416" y1="256" x2="704" y2="256" stroke="#525252" stroke-width="6" stroke-linecap="round"/>
+  <line x1="416" y1="256" x2="562" y2="256" stroke="#f5f5f5" stroke-width="6" stroke-linecap="round"/>
+  <text x="679" y="286" font-family="-apple-system,sans-serif" font-size="16" fill="#a3a3a3">4:31</text>
+  <circle cx="516" cy="346" r="26" fill="#f5f5f5"/><path d="M508 332l22 14-22 14z" fill="#171717"/>
+  <text x="72" y="382" font-family="-apple-system,sans-serif" font-size="15" fill="#737373">Queue unchanged · no search field active</text>
+</svg>

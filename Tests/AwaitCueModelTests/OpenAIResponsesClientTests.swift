@@ -5,6 +5,14 @@ import Testing
 
 @Suite("Responses API 客户端", .serialized)
 struct OpenAIResponsesClientTests {
+    @Test("忙闲 prompt 摘要对应生产客户端实际加载的规范化指令")
+    func exposesNormalizedInterruptibilityPromptDigest() {
+        #expect(
+            OpenAIResponsesClient.interruptibilityPromptSHA256
+                == "109f6c55049f458e2f91e1ea4f54ac60dcfc8e229ade554a89bf06ac350ad077"
+        )
+    }
+
     @Test("Condition 准备返回供用户确认的摘要和证据要求")
     func preparesConditionForConfirmation() async throws {
         let recorder = RequestRecorder()

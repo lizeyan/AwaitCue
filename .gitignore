@@ -4,6 +4,7 @@
 DerivedData/
 dist/
 coverage/
+.local/
 *.profraw
 *.profdata
 

@@ -84,6 +84,9 @@ final class AwaitCueApplicationModel: ObservableObject {
     private let browserBindingOperations: BrowserBindingOperations
     private let screenCapturePermission: any ScreenCapturePermissionProviding
     private let globalHotKeyFactory: GlobalHotKeyFactory
+    private let environment: [String: String]
+    private let isUserSessionUnlocked: @Sendable () -> Bool
+    private let localBenchmarkSecretLoader: @Sendable ([String: String]) throws -> String?
     private let hookCreationPresentationCoordinator = HookCreationPresentationCoordinator()
     private let apiKeyAccount = "default-responses-api-key"
     private var hasStarted = false
@@ -91,6 +94,8 @@ final class AwaitCueApplicationModel: ObservableObject {
     private var browserEvidenceTask: Task<Void, Never>?
     private var browserTargetTask: Task<Void, Never>?
     private var runtimeLoopTask: Task<Void, Never>?
+    private var localInterruptibilityBenchmarkTask: Task<Void, Never>?
+    private var localInterruptibilityBenchmarkUnlockTask: Task<Void, Never>?
     private var runtime: HookRuntime?
     private var globalHotKeyController: (any GlobalHotKeyControlling)?
     private var sessionActivityObserver: NSObjectProtocol?
@@ -110,8 +115,17 @@ final class AwaitCueApplicationModel: ObservableObject {
         modelClientFactory: @escaping AwaitCueModelClientFactory = {
             OpenAIResponsesClient(baseURL: $0, apiKey: $1, model: $2)
         },
-        browserBindingOperations: BrowserBindingOperations? = nil
+        browserBindingOperations: BrowserBindingOperations? = nil,
+        isUserSessionUnlocked: @escaping @Sendable () -> Bool = {
+            LocalInterruptibilityBenchmarkMonitor.isUserSessionUnlocked()
+        },
+        localBenchmarkSecretLoader: @escaping @Sendable ([String: String]) throws -> String? = {
+            try AwaitCueApplicationModel.localBenchmarkSecretFromFileDescriptor(environment: $0)
+        }
     ) {
+        self.environment = environment
+        self.isUserSessionUnlocked = isUserSessionUnlocked
+        self.localBenchmarkSecretLoader = localBenchmarkSecretLoader
         self.notificationClient = notificationClient ?? SystemNotificationClient()
         self.secretStore = secretStore ?? KeychainSecretStore(service: "org.awaitcue.model")
         self.defaults = defaults
@@ -181,8 +195,17 @@ final class AwaitCueApplicationModel: ObservableObject {
             )
             let repository = try SQLiteHookRepository(databaseURL: databaseURL)
             coordinator = HookCoordinator(repository: repository)
+            let shouldDeferBenchmarkKeychainAccess =
+                LocalInterruptibilityBenchmarkConfiguration.from(environment: environment) != nil
+                && !isUserSessionUnlocked()
             if let e2eModelConfiguration {
                 apiKey = e2eModelConfiguration.apiKey
+            } else if shouldDeferBenchmarkKeychainAccess {
+                // 锁屏期间 SecurityAgent 无法完成授权；等待会话恢复也确保 24 小时从真实采样开始。
+                apiKey = ""
+            } else if Self.hasLocalBenchmarkSecretFileDescriptor(environment: environment) {
+                // 显式提供描述符时禁止回退到 Keychain，否则空管道会重新弹出后台授权框。
+                apiKey = try localBenchmarkSecretLoader(environment) ?? ""
             } else {
                 apiKey = Self.shouldAccessKeychain(
                     environment: environment
@@ -210,6 +233,37 @@ final class AwaitCueApplicationModel: ObservableObject {
     /// 只有本机 live E2E 的显式环境标记可以隔离 Keychain；普通和发布启动始终读取真实密钥。
     nonisolated static func shouldAccessKeychain(environment: [String: String]) -> Bool {
         environment["AWAITCUE_E2E_SKIP_KEYCHAIN"] != "1"
+    }
+
+    /// 本机 benchmark 可从匿名描述符读取一次密钥，避免把 secret 写进 LaunchAgent 或进程参数。
+    nonisolated static func localBenchmarkSecretFromFileDescriptor(
+        environment: [String: String]
+    ) throws -> String? {
+        guard environment["AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK"] == "1",
+              let rawDescriptor = environment[
+                "AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK_API_KEY_FD"
+              ],
+              let descriptor = Int32(rawDescriptor),
+              descriptor >= 3
+        else {
+            return nil
+        }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        guard let data = try handle.readToEnd(),
+              let secret = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !secret.isEmpty
+        else {
+            return nil
+        }
+        return secret
+    }
+
+    nonisolated private static func hasLocalBenchmarkSecretFileDescriptor(
+        environment: [String: String]
+    ) -> Bool {
+        environment["AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK"] == "1"
+            && environment["AWAITCUE_LOCAL_INTERRUPTIBILITY_BENCHMARK_API_KEY_FD"] != nil
     }
 
     /// 只接受带双重 E2E 标记的 loopback 配置，避免测试变量把屏幕内容发到外部服务。
@@ -350,6 +404,7 @@ final class AwaitCueApplicationModel: ObservableObject {
             // 先建立 evidence consumer，再恢复页面绑定；静态页 bind 立即返回的首份 DOM
             // 不能在 Runtime 尚未就绪时被丢弃。
             await configureRuntimeIfPossible()
+            startLocalInterruptibilityBenchmarkIfRequested()
             try await restoreBrowserBindings()
             await refreshSafariExtensionStatus()
             configureGlobalHotKey()
@@ -889,6 +944,83 @@ final class AwaitCueApplicationModel: ObservableObject {
         }
     }
 
+    /// 显式评测进程才启动本机长时间采样；普通用户启动路径不创建目录也不增加模型调用。
+    private func startLocalInterruptibilityBenchmarkIfRequested() {
+        guard localInterruptibilityBenchmarkTask == nil,
+              let configuration = LocalInterruptibilityBenchmarkConfiguration.from(
+                environment: environment
+              )
+        else {
+            return
+        }
+        guard isUserSessionUnlocked() else {
+            scheduleLocalInterruptibilityBenchmarkUnlockWait()
+            return
+        }
+        localInterruptibilityBenchmarkUnlockTask?.cancel()
+        localInterruptibilityBenchmarkUnlockTask = nil
+        do {
+            let client = try configuredModelClient()
+            let monitor = try LocalInterruptibilityBenchmarkMonitor(
+                configuration: configuration,
+                evidenceProvider: AppActiveEvidenceProvider(
+                    privacyExclusionStore: privacyExclusionStore,
+                    activeBrowserHostResolver: browserSelectionRelay
+                ),
+                decisionProvider: client,
+                modelName: modelName,
+                endpointHost: apiHostname ?? "unknown"
+            )
+            localInterruptibilityBenchmarkTask = Task {
+                await monitor.run()
+            }
+        } catch {
+            // 这是显式开发评测模式；启动失败必须可见，不能悄悄假装正在收集样本。
+            startupError = "本机忙闲 benchmark 无法启动：\(Self.userFacingMessage(for: error))"
+        }
+    }
+
+    /// 会话通知可能先于 App observer 到达；五秒轮询只作为丢事件兜底，不执行截图。
+    private func scheduleLocalInterruptibilityBenchmarkUnlockWait() {
+        guard localInterruptibilityBenchmarkUnlockTask == nil else { return }
+        let isUserSessionUnlocked = self.isUserSessionUnlocked
+        let waiter = UserSessionUnlockWaiter(
+            isUnlocked: { isUserSessionUnlocked() },
+            sleep: { try await Task.sleep(for: .seconds(5)) }
+        )
+        localInterruptibilityBenchmarkUnlockTask = Task { [weak self] in
+            await waiter.waitUntilUnlocked()
+            guard !Task.isCancelled else { return }
+            await self?.resumeLocalInterruptibilityBenchmarkAfterUnlockIfNeeded()
+        }
+    }
+
+    /// 锁屏启动的评测进程在用户会话恢复后才读取 Keychain，并从此刻开始 24 小时采样。
+    private func resumeLocalInterruptibilityBenchmarkAfterUnlockIfNeeded() async {
+        guard localInterruptibilityBenchmarkTask == nil,
+              LocalInterruptibilityBenchmarkConfiguration.from(environment: environment) != nil,
+              isUserSessionUnlocked()
+        else {
+            return
+        }
+        do {
+            if apiKey.isEmpty {
+                apiKey = try localBenchmarkSecretLoader(environment) ?? ""
+            }
+            if apiKey.isEmpty,
+               !Self.hasLocalBenchmarkSecretFileDescriptor(environment: environment),
+               Self.shouldAccessKeychain(environment: environment)
+            {
+                apiKey = try secretStore.load(account: apiKeyAccount) ?? ""
+            }
+            modelStatus = apiKey.isEmpty || !confirmedAPIHostname ? .notConfigured : .connected
+            await configureRuntimeIfPossible()
+            startLocalInterruptibilityBenchmarkIfRequested()
+        } catch {
+            startupError = "本机忙闲 benchmark 无法读取模型配置：\(Self.userFacingMessage(for: error))"
+        }
+    }
+
     /// 停止全部模型任务并等待 Runtime generation 失效；浏览器解绑由调用方在持久化成功后执行。
     private func stopRuntimeObservation() async {
         let previousRuntime = runtime
@@ -981,8 +1113,11 @@ final class AwaitCueApplicationModel: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, let runtime = self.runtime else { return }
-                try? await runtime.userSessionBecameActive()
+                guard let self else { return }
+                await self.resumeLocalInterruptibilityBenchmarkAfterUnlockIfNeeded()
+                if let runtime = self.runtime {
+                    try? await runtime.userSessionBecameActive()
+                }
                 await self.reloadHooks()
             }
         }

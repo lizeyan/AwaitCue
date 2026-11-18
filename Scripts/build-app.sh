@@ -30,6 +30,11 @@ if [[ -d "${bin_path}/AwaitCue_AwaitCueApp.bundle" ]]; then
   cp -R -X "${bin_path}/AwaitCue_AwaitCueApp.bundle" "${app_path}/Contents/Resources/"
 fi
 
+if [[ -d "${bin_path}/AwaitCue_AwaitCueModel.bundle" ]]; then
+  # Model prompt 必须和可执行文件一起分发；只在 SwiftPM 构建目录中存在会让正式 App 首次判断时崩溃。
+  cp -R -X "${bin_path}/AwaitCue_AwaitCueModel.bundle" "${app_path}/Contents/Resources/"
+fi
+
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${version}" "${app_path}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${build_number}" "${app_path}/Contents/Info.plist"
 
