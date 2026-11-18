@@ -143,6 +143,7 @@ test("候选 prompt 回放只接受冻结标签且报告不复制原始证据", 
 
   const production = compareHumanReview(run, samples, review);
   production.summary.privateFutureField = "sensitive-production-value";
+  production.summary.interruptibleMetrics.privateFutureField = "sensitive-positive-value";
   production.confidenceSummary.privateFutureField = "sensitive-confidence-value";
   production.sampling.privateFutureField = "sensitive-sampling-value";
   report.summary.tokens.privateFutureField = "sensitive-token-value";
@@ -161,6 +162,20 @@ test("候选 prompt 回放只接受冻结标签且报告不复制原始证据", 
   assert.equal(publicReport.dataset.sampleCount, 1);
   assert.equal(publicReport.baseline.overall.accuracy, 1);
   assert.equal(publicReport.candidate.overall.accuracy, 1);
+  assert.deepEqual(publicReport.baseline.overall.interruptibleMetrics, {
+    truePositiveCount: 0,
+    falsePositiveCount: 0,
+    falseNegativeCount: 0,
+    trueNegativeCount: 1,
+    predictedPositiveCount: 0,
+    actualPositiveCount: 0,
+    precision: null,
+    recall: null,
+  });
+  assert.deepEqual(
+    publicReport.candidate.overall.interruptibleMetrics,
+    publicReport.baseline.overall.interruptibleMetrics,
+  );
   assert.equal(publicReport.paired.candidateFixedCount, 1);
   assert.doesNotMatch(
     publicJSON,
@@ -181,6 +196,18 @@ test("候选 prompt 回放只接受冻结标签且报告不复制原始证据", 
   assert.throws(
     () => validatePublicBenchmarkReport(nestedPrivateField),
     /unexpected field/,
+  );
+
+  const legacyProduction = structuredClone(production);
+  const legacyReplay = structuredClone(report);
+  delete legacyProduction.summary.interruptibleMetrics;
+  delete legacyProduction.promptVerifiedSummary.interruptibleMetrics;
+  delete legacyReplay.summary.interruptibleMetrics;
+  delete legacyReplay.promptVerifiedSummary.interruptibleMetrics;
+  const publicLegacyReport = createPublicBenchmarkReport(legacyProduction, legacyReplay);
+  assert.deepEqual(
+    publicLegacyReport.candidate.overall.interruptibleMetrics,
+    publicReport.candidate.overall.interruptibleMetrics,
   );
 });
 
@@ -517,6 +544,16 @@ test("人工标签完整后才比较准确率、混淆矩阵和延迟", () => {
   });
   assert.deepEqual(report.summary.confusion.interruptibility.notInterruptible, {
     notInterruptible: 1,
+  });
+  assert.deepEqual(report.summary.interruptibleMetrics, {
+    truePositiveCount: 0,
+    falsePositiveCount: 0,
+    falseNegativeCount: 2,
+    trueNegativeCount: 1,
+    predictedPositiveCount: 0,
+    actualPositiveCount: 2,
+    precision: null,
+    recall: 0,
   });
   assert.equal(report.samples[0].humanRationale, "正在编辑技术内容，需要持续专注。");
   assert.equal(report.samples[0].modelDecision, "notInterruptible");

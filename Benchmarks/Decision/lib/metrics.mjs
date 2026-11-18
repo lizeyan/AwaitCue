@@ -44,9 +44,46 @@ export function aggregateBenchmark(caseResults) {
       p95: percentile(durations, 0.95),
       max: durations.at(-1) ?? null,
     },
+    interruptibleMetrics: interruptibleMetrics(flattened),
     confusion: confusionMatrix(flattened),
     tokens: tokenSummary(flattened),
     cases: caseSummaries,
+  };
+}
+
+/**
+ * 把真正会发送通知的 interruptible 视为 positive。
+ * 人工 uncertain 并不证明可以打断，因此模型若在该场景通知，也必须计为误报。
+ */
+function interruptibleMetrics(flattened) {
+  const samples = flattened.filter(({ case: entry }) => entry.kind === "interruptibility");
+  let truePositiveCount = 0;
+  let falsePositiveCount = 0;
+  let falseNegativeCount = 0;
+  let trueNegativeCount = 0;
+
+  for (const { case: entry, outcome } of samples) {
+    const actualPositive = entry.expected === "interruptible";
+    const predictedPositive = outcome === "interruptible";
+    if (actualPositive && predictedPositive) truePositiveCount += 1;
+    else if (!actualPositive && predictedPositive) falsePositiveCount += 1;
+    else if (actualPositive) falseNegativeCount += 1;
+    else trueNegativeCount += 1;
+  }
+
+  const predictedPositiveCount = truePositiveCount + falsePositiveCount;
+  const actualPositiveCount = truePositiveCount + falseNegativeCount;
+  return {
+    truePositiveCount,
+    falsePositiveCount,
+    falseNegativeCount,
+    trueNegativeCount,
+    predictedPositiveCount,
+    actualPositiveCount,
+    precision: predictedPositiveCount === 0
+      ? null
+      : truePositiveCount / predictedPositiveCount,
+    recall: actualPositiveCount === 0 ? null : truePositiveCount / actualPositiveCount,
   };
 }
 

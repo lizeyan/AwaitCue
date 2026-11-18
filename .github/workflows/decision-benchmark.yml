@@ -15,6 +15,18 @@ on:
         description: Required mean case stability
         required: true
         default: "0.90"
+      maximum_interruptibility_false_positives:
+        description: Maximum busy or uncertain cases incorrectly marked interruptible
+        required: true
+        default: "0"
+      minimum_interruptibility_precision:
+        description: Required precision when interruptible sends a notification
+        required: true
+        default: "1.00"
+      minimum_interruptibility_recall:
+        description: Required recall for human-labeled interruptible cases
+        required: true
+        default: "0.30"
 
 permissions:
   contents: read
@@ -48,6 +60,9 @@ jobs:
             --repetitions "${{ inputs.repetitions }}" \
             --minimum-accuracy "${{ inputs.minimum_accuracy }}" \
             --minimum-stability "${{ inputs.minimum_stability }}" \
+            --maximum-interruptibility-false-positives "${{ inputs.maximum_interruptibility_false_positives }}" \
+            --minimum-interruptibility-precision "${{ inputs.minimum_interruptibility_precision }}" \
+            --minimum-interruptibility-recall "${{ inputs.minimum_interruptibility_recall }}" \
             --output decision-benchmark-report.json
       - name: Upload benchmark report
         if: always()

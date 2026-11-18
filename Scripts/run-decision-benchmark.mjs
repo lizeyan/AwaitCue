@@ -97,6 +97,22 @@ async function main() {
       && summary.meanCaseStability < options.minimumStability) {
     process.exitCode = 3;
   }
+  if (options.minimumInterruptibilityPrecision !== undefined
+      && (summary.interruptibleMetrics.precision === null
+        || summary.interruptibleMetrics.precision < options.minimumInterruptibilityPrecision)) {
+    process.exitCode = 4;
+  }
+  if (options.minimumInterruptibilityRecall !== undefined
+      && (summary.interruptibleMetrics.recall === null
+        || summary.interruptibleMetrics.recall < options.minimumInterruptibilityRecall)) {
+    process.exitCode = 5;
+  }
+  // 零误报是通知安全的硬门槛，放在最后检查，确保它覆盖其他质量门禁的退出码。
+  if (options.maximumInterruptibilityFalsePositives !== undefined
+      && summary.interruptibleMetrics.falsePositiveCount
+        > options.maximumInterruptibilityFalsePositives) {
+    process.exitCode = 6;
+  }
 }
 
 function parseArguments(argumentsList) {
@@ -114,6 +130,9 @@ function parseArguments(argumentsList) {
     else if (argument === "--repetitions") options.repetitions = positiveNumber(nextValue(argumentsList, ++index, argument), argument);
     else if (argument === "--minimum-accuracy") options.minimumAccuracy = rate(nextValue(argumentsList, ++index, argument), argument);
     else if (argument === "--minimum-stability") options.minimumStability = rate(nextValue(argumentsList, ++index, argument), argument);
+    else if (argument === "--minimum-interruptibility-precision") options.minimumInterruptibilityPrecision = rate(nextValue(argumentsList, ++index, argument), argument);
+    else if (argument === "--minimum-interruptibility-recall") options.minimumInterruptibilityRecall = rate(nextValue(argumentsList, ++index, argument), argument);
+    else if (argument === "--maximum-interruptibility-false-positives") options.maximumInterruptibilityFalsePositives = nonnegativeInteger(nextValue(argumentsList, ++index, argument), argument);
     else throw new Error(`unknown argument: ${argument}`);
   }
   return options;
@@ -135,6 +154,15 @@ function nextValue(argumentsList, index, option) {
 function positiveNumber(value, option) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${option} must be a positive integer`);
+  return parsed;
+}
+
+/** 解析允许为零的计数门槛，例如通知误报上限。 */
+function nonnegativeInteger(value, option) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${option} must be a nonnegative integer`);
+  }
   return parsed;
 }
 

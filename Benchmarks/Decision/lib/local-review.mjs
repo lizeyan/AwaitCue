@@ -542,6 +542,7 @@ function validatePublicAggregate(summary, label, nullable = false) {
     "meanCaseStability",
     "fullyStableCaseRate",
     "latencyMs",
+    "interruptibleMetrics",
     "confusion",
     "tokens",
   ], `public ${label}`);
@@ -566,9 +567,74 @@ function validatePublicAggregate(summary, label, nullable = false) {
       throw new Error(`public ${label} latency ${name} is invalid`);
     }
   }
+  validatePublicInterruptibleMetrics(
+    summary.interruptibleMetrics,
+    `${label} interruptibleMetrics`,
+    summary.runCount,
+  );
   assertExactObject(summary.confusion, ["interruptibility"], `public ${label} confusion`);
   validatePublicOutcomeMatrix(summary.confusion.interruptibility, `${label} confusion`);
   if (summary.tokens !== null) validatePublicTokens(summary.tokens, `${label} tokens`);
+}
+
+/** 校验真正会触发通知的 positive 指标，并拒绝把零次通知预测伪装成满 precision。 */
+function validatePublicInterruptibleMetrics(metrics, label, runCount) {
+  assertExactObject(metrics, [
+    "truePositiveCount",
+    "falsePositiveCount",
+    "falseNegativeCount",
+    "trueNegativeCount",
+    "predictedPositiveCount",
+    "actualPositiveCount",
+    "precision",
+    "recall",
+  ], `public ${label}`);
+  for (const field of [
+    "truePositiveCount",
+    "falsePositiveCount",
+    "falseNegativeCount",
+    "trueNegativeCount",
+    "predictedPositiveCount",
+    "actualPositiveCount",
+  ]) {
+    assertNonnegativeInteger(metrics[field], `public ${label} ${field}`);
+  }
+  if (metrics.predictedPositiveCount
+      !== metrics.truePositiveCount + metrics.falsePositiveCount) {
+    throw new Error(`public ${label} predictedPositiveCount is inconsistent`);
+  }
+  if (metrics.actualPositiveCount
+      !== metrics.truePositiveCount + metrics.falseNegativeCount) {
+    throw new Error(`public ${label} actualPositiveCount is inconsistent`);
+  }
+  if (metrics.truePositiveCount + metrics.falsePositiveCount
+      + metrics.falseNegativeCount + metrics.trueNegativeCount !== runCount) {
+    throw new Error(`public ${label} counts do not match runCount`);
+  }
+  validateNullableDerivedRate(
+    metrics.precision,
+    metrics.truePositiveCount,
+    metrics.predictedPositiveCount,
+    `public ${label} precision`,
+  );
+  validateNullableDerivedRate(
+    metrics.recall,
+    metrics.truePositiveCount,
+    metrics.actualPositiveCount,
+    `public ${label} recall`,
+  );
+}
+
+/** 分母为零时比率必须是 null；否则必须与公开计数严格对应。 */
+function validateNullableDerivedRate(value, numerator, denominator, label) {
+  if (denominator === 0) {
+    if (value !== null) throw new Error(`${label} must be null when its denominator is zero`);
+    return;
+  }
+  assertRate(value, label);
+  if (Math.abs(value - (numerator / denominator)) > Number.EPSILON) {
+    throw new Error(`${label} is inconsistent with its counts`);
+  }
 }
 
 /** 校验置信度聚合；无可用样本时平均值可以为 null。 */
@@ -697,8 +763,62 @@ function publicAggregate(summary) {
     meanCaseStability: summary.meanCaseStability,
     fullyStableCaseRate: summary.fullyStableCaseRate,
     latencyMs: publicLatency(summary.latencyMs),
+    interruptibleMetrics: publicInterruptibleMetrics(
+      summary.interruptibleMetrics,
+      summary.confusion,
+    ),
     confusion: publicConfusion(summary.confusion),
     tokens: publicTokens(summary.tokens),
+  };
+}
+
+/** 只复制通知 positive 的固定聚合字段，旧报告则回退到混淆矩阵推导。 */
+function publicInterruptibleMetrics(metrics, confusion) {
+  const source = metrics ?? interruptibleMetricsFromConfusion(confusion);
+  return {
+    truePositiveCount: source.truePositiveCount,
+    falsePositiveCount: source.falsePositiveCount,
+    falseNegativeCount: source.falseNegativeCount,
+    trueNegativeCount: source.trueNegativeCount,
+    predictedPositiveCount: source.predictedPositiveCount,
+    actualPositiveCount: source.actualPositiveCount,
+    precision: source.precision,
+    recall: source.recall,
+  };
+}
+
+/** 旧私有报告没有 positive 指标时，从同一份完整三态混淆矩阵无损推导。 */
+function interruptibleMetricsFromConfusion(confusion) {
+  const matrix = confusion?.interruptibility ?? {};
+  let truePositiveCount = 0;
+  let falsePositiveCount = 0;
+  let falseNegativeCount = 0;
+  let trueNegativeCount = 0;
+  for (const expected of validHumanDecisions) {
+    for (const outcome of publicOutcomes()) {
+      const count = matrix[expected]?.[outcome] ?? 0;
+      if (!Number.isInteger(count) || count < 0) continue;
+      const actualPositive = expected === "interruptible";
+      const predictedPositive = outcome === "interruptible";
+      if (actualPositive && predictedPositive) truePositiveCount += count;
+      else if (!actualPositive && predictedPositive) falsePositiveCount += count;
+      else if (actualPositive) falseNegativeCount += count;
+      else trueNegativeCount += count;
+    }
+  }
+  const predictedPositiveCount = truePositiveCount + falsePositiveCount;
+  const actualPositiveCount = truePositiveCount + falseNegativeCount;
+  return {
+    truePositiveCount,
+    falsePositiveCount,
+    falseNegativeCount,
+    trueNegativeCount,
+    predictedPositiveCount,
+    actualPositiveCount,
+    precision: predictedPositiveCount === 0
+      ? null
+      : truePositiveCount / predictedPositiveCount,
+    recall: actualPositiveCount === 0 ? null : truePositiveCount / actualPositiveCount,
   };
 }
 
