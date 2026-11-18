@@ -1,0 +1,250 @@
+{
+  "version": 1,
+  "kind": "interruptibility-public-benchmark-report",
+  "generatedAt": "2026-11-18T06:35:59.955Z",
+  "dataset": {
+    "sampleCount": 91,
+    "promptVerifiedSampleCount": 53,
+    "sampling": {
+      "timeWeighted": false,
+      "consecutiveIdenticalImagesIncluded": false
+    },
+    "reliability": {
+      "lockedPollCount": 898,
+      "excludedPollCount": 0,
+      "unavailablePollCount": 3,
+      "captureFailureCount": 6,
+      "modelFailureCount": 1
+    }
+  },
+  "baseline": {
+    "promptSHA256": "109f6c55049f458e2f91e1ea4f54ac60dcfc8e229ade554a89bf06ac350ad077",
+    "overall": {
+      "caseCount": 91,
+      "runCount": 91,
+      "correctRunCount": 65,
+      "validDecisionCount": 90,
+      "accuracy": 0.7142857142857143,
+      "validDecisionAccuracy": 0.7222222222222222,
+      "incompleteRate": 0,
+      "invalidRate": 0,
+      "errorRate": 0.01098901098901099,
+      "meanCaseStability": null,
+      "fullyStableCaseRate": null,
+      "latencyMs": {
+        "p50": 3971,
+        "p95": 7556,
+        "max": 11367
+      },
+      "confusion": {
+        "interruptibility": {
+          "interruptible": {
+            "notInterruptible": 8,
+            "uncertain": 2
+          },
+          "notInterruptible": {
+            "interruptible": 11,
+            "notInterruptible": 65,
+            "uncertain": 4,
+            "error": 1
+          }
+        }
+      },
+      "tokens": null
+    },
+    "promptVerified": {
+      "caseCount": 53,
+      "runCount": 53,
+      "correctRunCount": 40,
+      "validDecisionCount": 53,
+      "accuracy": 0.7547169811320755,
+      "validDecisionAccuracy": 0.7547169811320755,
+      "incompleteRate": 0,
+      "invalidRate": 0,
+      "errorRate": 0,
+      "meanCaseStability": null,
+      "fullyStableCaseRate": null,
+      "latencyMs": {
+        "p50": 3952,
+        "p95": 7556,
+        "max": 10567
+      },
+      "confusion": {
+        "interruptibility": {
+          "interruptible": {
+            "notInterruptible": 6
+          },
+          "notInterruptible": {
+            "interruptible": 5,
+            "notInterruptible": 40,
+            "uncertain": 2
+          }
+        }
+      },
+      "tokens": null
+    },
+    "confidence": {
+      "validDecisionCount": 90,
+      "correctDecisionCount": 65,
+      "incorrectDecisionCount": 25,
+      "mean": 0.959555555556,
+      "meanCorrect": 0.972,
+      "meanIncorrect": 0.9272
+    },
+    "promptVerifiedConfidence": {
+      "validDecisionCount": 53,
+      "correctDecisionCount": 40,
+      "incorrectDecisionCount": 13,
+      "mean": 0.962264150943,
+      "meanCorrect": 0.97275,
+      "meanIncorrect": 0.93
+    }
+  },
+  "candidate": {
+    "promptSHA256": "2e222489dc7f1e26c05c9ba3f30d25d7d4b496137a78fad9b4ebedaf87544c37",
+    "overall": {
+      "caseCount": 91,
+      "runCount": 91,
+      "correctRunCount": 64,
+      "validDecisionCount": 91,
+      "accuracy": 0.7032967032967034,
+      "validDecisionAccuracy": 0.7032967032967034,
+      "incompleteRate": 0,
+      "invalidRate": 0,
+      "errorRate": 0,
+      "meanCaseStability": null,
+      "fullyStableCaseRate": null,
+      "latencyMs": {
+        "p50": 4040.880833000003,
+        "p95": 10004.731458000002,
+        "max": 27129.19883400001
+      },
+      "confusion": {
+        "interruptibility": {
+          "interruptible": {
+            "interruptible": 5,
+            "notInterruptible": 5
+          },
+          "notInterruptible": {
+            "interruptible": 12,
+            "notInterruptible": 59,
+            "uncertain": 10
+          }
+        }
+      },
+      "tokens": {
+        "input": 851013,
+        "output": 2066,
+        "reasoning": 0,
+        "cachedInput": 0,
+        "cacheWrite": 848635,
+        "tokenCacheHitRate": 0,
+        "requestCacheHitRate": 0
+      }
+    },
+    "promptVerified": {
+      "caseCount": 53,
+      "runCount": 53,
+      "correctRunCount": 37,
+      "validDecisionCount": 53,
+      "accuracy": 0.6981132075471698,
+      "validDecisionAccuracy": 0.6981132075471698,
+      "incompleteRate": 0,
+      "invalidRate": 0,
+      "errorRate": 0,
+      "meanCaseStability": null,
+      "fullyStableCaseRate": null,
+      "latencyMs": {
+        "p50": 4019.786374999996,
+        "p95": 9287.589582999994,
+        "max": 19635.0735
+      },
+      "confusion": {
+        "interruptibility": {
+          "interruptible": {
+            "interruptible": 1,
+            "notInterruptible": 5
+          },
+          "notInterruptible": {
+            "interruptible": 6,
+            "notInterruptible": 36,
+            "uncertain": 5
+          }
+        }
+      },
+      "tokens": {
+        "input": 505418,
+        "output": 1207,
+        "reasoning": 0,
+        "cachedInput": 0,
+        "cacheWrite": 503541,
+        "tokenCacheHitRate": 0,
+        "requestCacheHitRate": 0
+      }
+    },
+    "confidence": {
+      "validDecisionCount": 91,
+      "correctDecisionCount": 64,
+      "incorrectDecisionCount": 27,
+      "mean": 0.927252747253,
+      "meanCorrect": 0.9540625,
+      "meanIncorrect": 0.863703703704
+    },
+    "promptVerifiedConfidence": {
+      "validDecisionCount": 53,
+      "correctDecisionCount": 37,
+      "incorrectDecisionCount": 16,
+      "mean": 0.924905660377,
+      "meanCorrect": 0.957837837838,
+      "meanIncorrect": 0.84875
+    }
+  },
+  "paired": {
+    "sampleCount": 91,
+    "bothCorrectCount": 51,
+    "bothIncorrectCount": 13,
+    "candidateFixedCount": 13,
+    "candidateRegressedCount": 14,
+    "transitions": {
+      "interruptible": {
+        "interruptible": 5,
+        "notInterruptible": 6
+      },
+      "notInterruptible": {
+        "interruptible": 10,
+        "notInterruptible": 56,
+        "uncertain": 7
+      },
+      "uncertain": {
+        "interruptible": 2,
+        "notInterruptible": 2,
+        "uncertain": 2
+      },
+      "error": {
+        "uncertain": 1
+      }
+    }
+  },
+  "promptVerifiedPaired": {
+    "sampleCount": 53,
+    "bothCorrectCount": 32,
+    "bothIncorrectCount": 8,
+    "candidateFixedCount": 5,
+    "candidateRegressedCount": 8,
+    "transitions": {
+      "interruptible": {
+        "interruptible": 2,
+        "notInterruptible": 3
+      },
+      "notInterruptible": {
+        "interruptible": 5,
+        "notInterruptible": 37,
+        "uncertain": 4
+      },
+      "uncertain": {
+        "notInterruptible": 1,
+        "uncertain": 1
+      }
+    }
+  }
+}
