@@ -340,8 +340,10 @@ struct NativeBrowserSelectionRelayHandshakeTests {
 
     @Test("Chrome ACK 超时后迟到响应不会完成后续命令")
     func lateChromiumAcknowledgementDoesNotLeakAcrossCommands() async throws {
+        // 这里验证的是 request ID 隔离，不是 150ms 的调度性能。使用生产同尺度的超时预算，
+        // 避免覆盖率插桩或共享 CI runner 把第二条及时 ACK 误判成超时。
         let fixture = try await RelayHandshakeFixture(
-            commandAcknowledgementTimeout: .milliseconds(150)
+            commandAcknowledgementTimeout: .seconds(1)
         )
         defer { fixture.stop() }
         try await fixture.verifyConnection()
