@@ -1,7 +1,7 @@
 {
   "version": 1,
   "kind": "interruptibility-public-benchmark-report",
-  "generatedAt": "2026-11-18T09:01:47.350Z",
+  "generatedAt": "2026-11-18T09:48:49.392Z",
   "dataset": {
     "sampleCount": 91,
     "promptVerifiedSampleCount": 53,
@@ -36,6 +36,16 @@
         "p95": 7556,
         "max": 11367
       },
+      "interruptibleMetrics": {
+        "truePositiveCount": 0,
+        "falsePositiveCount": 11,
+        "falseNegativeCount": 10,
+        "trueNegativeCount": 70,
+        "predictedPositiveCount": 11,
+        "actualPositiveCount": 10,
+        "precision": 0,
+        "recall": 0
+      },
       "confusion": {
         "interruptibility": {
           "interruptible": {
@@ -68,6 +78,16 @@
         "p50": 3952,
         "p95": 7556,
         "max": 10567
+      },
+      "interruptibleMetrics": {
+        "truePositiveCount": 0,
+        "falsePositiveCount": 5,
+        "falseNegativeCount": 6,
+        "trueNegativeCount": 42,
+        "predictedPositiveCount": 5,
+        "actualPositiveCount": 6,
+        "precision": 0,
+        "recall": 0
       },
       "confusion": {
         "interruptibility": {
@@ -119,6 +139,16 @@
         "p95": 4781.758666999987,
         "max": 5412.711875000001
       },
+      "interruptibleMetrics": {
+        "truePositiveCount": 5,
+        "falsePositiveCount": 0,
+        "falseNegativeCount": 5,
+        "trueNegativeCount": 81,
+        "predictedPositiveCount": 5,
+        "actualPositiveCount": 10,
+        "precision": 1,
+        "recall": 0.5
+      },
       "confusion": {
         "interruptibility": {
           "interruptible": {
@@ -156,6 +186,16 @@
         "p50": 3388.463791999995,
         "p95": 4480.253166999988,
         "max": 5119.717000000004
+      },
+      "interruptibleMetrics": {
+        "truePositiveCount": 2,
+        "falsePositiveCount": 0,
+        "falseNegativeCount": 4,
+        "trueNegativeCount": 47,
+        "predictedPositiveCount": 2,
+        "actualPositiveCount": 6,
+        "precision": 1,
+        "recall": 0.3333333333333333
       },
       "confusion": {
         "interruptibility": {

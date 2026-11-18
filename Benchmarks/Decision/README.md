@@ -303,6 +303,9 @@ Maintainers can also run the manual **Decision benchmark** GitHub Actions workfl
 the `AWAITCUE_BENCHMARK_BASE_URL`, `AWAITCUE_BENCHMARK_API_KEY`, and
 `AWAITCUE_BENCHMARK_MODEL` repository secrets. The workflow uploads the aggregate JSON report and
 enforces the requested accuracy and stability thresholds without exposing raw evidence or secrets.
+It also applies the notification-safety gate: `interruptible` is the positive outcome because it is
+the only outcome that sends a notification; the default permits zero false positives, requires
+precision `1.00`, and requires recall of at least `0.30`.
 
 To compare a different model or prompt without changing the corpus:
 
@@ -313,11 +316,18 @@ node Scripts/run-decision-benchmark.mjs \
   --interruptibility-prompt /tmp/interruptibility-v2.txt \
   --repetitions 5 \
   --minimum-accuracy 0.90 \
-  --minimum-stability 0.90
+  --minimum-stability 0.90 \
+  --maximum-interruptibility-false-positives 0 \
+  --minimum-interruptibility-precision 1.00 \
+  --minimum-interruptibility-recall 0.30
 ```
 
 The process exits with status 2 when overall accuracy is below the configured gate, or status 3 when
-mean per-case stability is below its gate.
+mean per-case stability is below its gate. Status 4 means notification precision is below its gate
+or the model never predicted `interruptible`; status 5 means notification recall is below its gate;
+status 6 means the false-positive count exceeds its hard limit. The false-positive gate has the
+highest exit-code priority so a notification-safety failure remains explicit when multiple gates
+fail in one run.
 
 ## Report semantics
 
@@ -330,6 +340,12 @@ mean per-case stability is below its gate.
 - `confusion`: artificial label versus actual decision, including `incomplete`, `invalid`, and
   `error` buckets.
 - `latencyMs`: nearest-rank p50, p95, and maximum end-to-end request time.
+- `interruptibleMetrics`: TP, FP, FN, TN, predicted-positive count, actual-positive count,
+  precision, and recall for the notification action. A human `uncertain` label is negative for this
+  action, so predicting `interruptible` there is a false positive. `notInterruptible`, `uncertain`,
+  `incomplete`, `invalid`, and `error` model outcomes are all non-notification predictions, while
+  the ordinary confusion and failure metrics keep them separate. Precision is `null` when there are
+  no positive predictions; it is never reported as a perfect score.
 - `tokens`: total input, output, hidden reasoning, cached input, and cache-write tokens, plus request
   and token cache hit rates.
 

@@ -75,6 +75,57 @@ test("aggregates user-labeled decisions, stability, failures, latency, and token
   );
 });
 
+test("把 interruptible 作为通知 positive，并且不把零预测伪装成满 precision", () => {
+  const report = aggregateBenchmark([
+    benchmarkCase("obvious-break", "interruptibility", "interruptible", [
+      sample("interruptible", 100),
+      sample("notInterruptible", 100),
+      sample("uncertain", 100),
+      sample("error", 100),
+    ]),
+    benchmarkCase("focused-work", "interruptibility", "notInterruptible", [
+      sample("interruptible", 100),
+      sample("notInterruptible", 100),
+      sample("uncertain", 100),
+    ]),
+    benchmarkCase("ambiguous-focus", "interruptibility", "uncertain", [
+      sample("interruptible", 100),
+      sample("uncertain", 100),
+    ]),
+  ]);
+
+  assert.deepEqual(report.interruptibleMetrics, {
+    truePositiveCount: 1,
+    falsePositiveCount: 2,
+    falseNegativeCount: 3,
+    trueNegativeCount: 3,
+    predictedPositiveCount: 3,
+    actualPositiveCount: 4,
+    precision: 1 / 3,
+    recall: 1 / 4,
+  });
+
+  const noNotification = aggregateBenchmark([
+    benchmarkCase("obvious-break", "interruptibility", "interruptible", [
+      sample("notInterruptible", 100),
+    ]),
+    benchmarkCase("focused-work", "interruptibility", "notInterruptible", [
+      sample("uncertain", 100),
+    ]),
+  ]);
+
+  assert.deepEqual(noNotification.interruptibleMetrics, {
+    truePositiveCount: 0,
+    falsePositiveCount: 0,
+    falseNegativeCount: 1,
+    trueNegativeCount: 1,
+    predictedPositiveCount: 0,
+    actualPositiveCount: 1,
+    precision: null,
+    recall: 0,
+  });
+});
+
 function benchmarkCase(id, kind, expected, samples, description) {
   return { id, kind, expected, samples, description };
 }
