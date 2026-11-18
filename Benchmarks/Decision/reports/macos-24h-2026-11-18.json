@@ -1,7 +1,7 @@
 {
   "version": 1,
   "kind": "interruptibility-public-benchmark-report",
-  "generatedAt": "2026-11-18T06:35:59.955Z",
+  "generatedAt": "2026-11-18T09:01:47.350Z",
   "dataset": {
     "sampleCount": 91,
     "promptVerifiedSampleCount": 53,
@@ -101,23 +101,23 @@
     }
   },
   "candidate": {
-    "promptSHA256": "2e222489dc7f1e26c05c9ba3f30d25d7d4b496137a78fad9b4ebedaf87544c37",
+    "promptSHA256": "772e0a09fd434b05ae6eb2ddee41c3146fb6e1c66940873906a5b6dae8cbc99c",
     "overall": {
       "caseCount": 91,
       "runCount": 91,
-      "correctRunCount": 64,
+      "correctRunCount": 86,
       "validDecisionCount": 91,
-      "accuracy": 0.7032967032967034,
-      "validDecisionAccuracy": 0.7032967032967034,
+      "accuracy": 0.945054945054945,
+      "validDecisionAccuracy": 0.945054945054945,
       "incompleteRate": 0,
       "invalidRate": 0,
       "errorRate": 0,
       "meanCaseStability": null,
       "fullyStableCaseRate": null,
       "latencyMs": {
-        "p50": 4040.880833000003,
-        "p95": 10004.731458000002,
-        "max": 27129.19883400001
+        "p50": 3326.547417000009,
+        "p95": 4781.758666999987,
+        "max": 5412.711875000001
       },
       "confusion": {
         "interruptibility": {
@@ -126,124 +126,114 @@
             "notInterruptible": 5
           },
           "notInterruptible": {
-            "interruptible": 12,
-            "notInterruptible": 59,
-            "uncertain": 10
+            "notInterruptible": 81
           }
         }
       },
       "tokens": {
-        "input": 851013,
-        "output": 2066,
+        "input": 866028,
+        "output": 2088,
         "reasoning": 0,
-        "cachedInput": 0,
-        "cacheWrite": 848635,
-        "tokenCacheHitRate": 0,
-        "requestCacheHitRate": 0
+        "cachedInput": 46408,
+        "cacheWrite": 816582,
+        "tokenCacheHitRate": 0.053587181938690207,
+        "requestCacheHitRate": 0.054945054945054944
       }
     },
     "promptVerified": {
       "caseCount": 53,
       "runCount": 53,
-      "correctRunCount": 37,
+      "correctRunCount": 49,
       "validDecisionCount": 53,
-      "accuracy": 0.6981132075471698,
-      "validDecisionAccuracy": 0.6981132075471698,
+      "accuracy": 0.9245283018867925,
+      "validDecisionAccuracy": 0.9245283018867925,
       "incompleteRate": 0,
       "invalidRate": 0,
       "errorRate": 0,
       "meanCaseStability": null,
       "fullyStableCaseRate": null,
       "latencyMs": {
-        "p50": 4019.786374999996,
-        "p95": 9287.589582999994,
-        "max": 19635.0735
+        "p50": 3388.463791999995,
+        "p95": 4480.253166999988,
+        "max": 5119.717000000004
       },
       "confusion": {
         "interruptibility": {
           "interruptible": {
-            "interruptible": 1,
-            "notInterruptible": 5
+            "interruptible": 2,
+            "notInterruptible": 4
           },
           "notInterruptible": {
-            "interruptible": 6,
-            "notInterruptible": 36,
-            "uncertain": 5
+            "notInterruptible": 47
           }
         }
       },
       "tokens": {
-        "input": 505418,
-        "output": 1207,
+        "input": 514163,
+        "output": 1217,
         "reasoning": 0,
-        "cachedInput": 0,
-        "cacheWrite": 503541,
-        "tokenCacheHitRate": 0,
-        "requestCacheHitRate": 0
+        "cachedInput": 8900,
+        "cacheWrite": 502891,
+        "tokenCacheHitRate": 0.017309685838926565,
+        "requestCacheHitRate": 0.018867924528301886
       }
     },
     "confidence": {
       "validDecisionCount": 91,
-      "correctDecisionCount": 64,
-      "incorrectDecisionCount": 27,
-      "mean": 0.927252747253,
-      "meanCorrect": 0.9540625,
-      "meanIncorrect": 0.863703703704
+      "correctDecisionCount": 86,
+      "incorrectDecisionCount": 5,
+      "mean": 0.976153846154,
+      "meanCorrect": 0.976627906977,
+      "meanIncorrect": 0.968
     },
     "promptVerifiedConfidence": {
       "validDecisionCount": 53,
-      "correctDecisionCount": 37,
-      "incorrectDecisionCount": 16,
-      "mean": 0.924905660377,
-      "meanCorrect": 0.957837837838,
-      "meanIncorrect": 0.84875
+      "correctDecisionCount": 49,
+      "incorrectDecisionCount": 4,
+      "mean": 0.978113207547,
+      "meanCorrect": 0.978367346939,
+      "meanIncorrect": 0.975
     }
   },
   "paired": {
     "sampleCount": 91,
-    "bothCorrectCount": 51,
-    "bothIncorrectCount": 13,
-    "candidateFixedCount": 13,
-    "candidateRegressedCount": 14,
+    "bothCorrectCount": 65,
+    "bothIncorrectCount": 5,
+    "candidateFixedCount": 21,
+    "candidateRegressedCount": 0,
     "transitions": {
       "interruptible": {
-        "interruptible": 5,
-        "notInterruptible": 6
+        "notInterruptible": 11
       },
       "notInterruptible": {
-        "interruptible": 10,
-        "notInterruptible": 56,
-        "uncertain": 7
+        "interruptible": 4,
+        "notInterruptible": 69
       },
       "uncertain": {
-        "interruptible": 2,
-        "notInterruptible": 2,
-        "uncertain": 2
+        "interruptible": 1,
+        "notInterruptible": 5
       },
       "error": {
-        "uncertain": 1
+        "notInterruptible": 1
       }
     }
   },
   "promptVerifiedPaired": {
     "sampleCount": 53,
-    "bothCorrectCount": 32,
-    "bothIncorrectCount": 8,
-    "candidateFixedCount": 5,
-    "candidateRegressedCount": 8,
+    "bothCorrectCount": 40,
+    "bothIncorrectCount": 4,
+    "candidateFixedCount": 9,
+    "candidateRegressedCount": 0,
     "transitions": {
       "interruptible": {
-        "interruptible": 2,
-        "notInterruptible": 3
+        "notInterruptible": 5
       },
       "notInterruptible": {
-        "interruptible": 5,
-        "notInterruptible": 37,
-        "uncertain": 4
+        "interruptible": 2,
+        "notInterruptible": 44
       },
       "uncertain": {
-        "notInterruptible": 1,
-        "uncertain": 1
+        "notInterruptible": 2
       }
     }
   }

@@ -9,7 +9,7 @@ struct OpenAIResponsesClientTests {
     func exposesNormalizedInterruptibilityPromptDigest() {
         #expect(
             OpenAIResponsesClient.interruptibilityPromptSHA256
-                == "109f6c55049f458e2f91e1ea4f54ac60dcfc8e229ade554a89bf06ac350ad077"
+                == "605876cd62af6155b02a86e14105dd9395d1a0c9464837f1d73d141a894f931c"
         )
     }
 
@@ -254,7 +254,9 @@ struct OpenAIResponsesClientTests {
         let bodyData = try #require(recorder.request?.httpBody)
         let body = try #require(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
         let instructions = try #require(body["instructions"] as? String)
-        #expect(instructions.contains("无法识别当前焦点"))
+        #expect(instructions.contains("同时存在会得到不同结论的活动"))
+        #expect(instructions.contains("自动任务、智能助手或外部过程仍在独立执行"))
+        #expect(instructions.contains("正在播放且需要连续观看的视频"))
         let reasoning = try #require(body["reasoning"] as? [String: Any])
         #expect(reasoning["effort"] as? String == "none")
         let text = try #require(body["text"] as? [String: Any])
